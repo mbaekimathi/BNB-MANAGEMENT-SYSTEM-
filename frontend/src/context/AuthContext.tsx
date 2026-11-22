@@ -1,0 +1,55 @@
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { api, tokens, type Employee, type LoginResponse, type SignupPayload } from '../lib/api'
+
+interface AuthState {
+  user: Employee | null
+  loading: boolean
+  login: (identifier: string, password: string, remember: boolean) => Promise<Employee>
+  signup: (payload: SignupPayload) => Promise<{ message: string; user: Employee }>
+  logout: () => Promise<void>
+}
+
+const AuthContext = createContext<AuthState | null>(null)
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<Employee | null>(null)
+  const [loading, setLoading] = useState(() => Boolean(tokens.refresh))
+
+  useEffect(() => {
+    if (!tokens.refresh) return
+    api
+      .get<Employee>('/auth/me/')
+      .then((res) => setUser(res.data))
+      .catch(() => tokens.clear())
+      .finally(() => setLoading(false))
+  }, [])
+
+  const login = useCallback(async (identifier: string, password: string, remember: boolean) => {
+    const { data } = await api.post<LoginResponse>('/auth/login/', { identifier, password, remember_me: remember })
+    tokens.save(data.access, data.refresh, remember)
+    setUser(data.user)
+    return data.user
+  }, [])
+
+  const signup = useCallback(async (payload: SignupPayload) => {
+    const { data } = await api.post<{ message: string; user: Employee }>('/auth/register/', payload)
+    return data
+  }, [])
+
+  const logout = useCallback(async () => {
+    const refresh = tokens.refresh
+    tokens.clear()
+    setUser(null)
+    if (refresh) await api.post('/auth/logout/', { refresh }).catch(() => undefined)
+  }, [])
+
+  const value = useMemo(() => ({ user, loading, login, signup, logout }), [user, loading, login, signup, logout])
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function useAuth() {
+  const ctx = useContext(AuthContext)
+  if (!ctx) throw new Error('useAuth must be used inside <AuthProvider>')
+  return ctx
+}
