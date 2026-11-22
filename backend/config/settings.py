@@ -66,7 +66,7 @@ WSGI_APPLICATION = "config.wsgi.application"
 
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.mysql",
+        "ENGINE": "config.mysql_backend",
         "NAME": os.getenv("DB_NAME", "bnb_management"),
         "USER": os.getenv("DB_USER", "bnb_user"),
         "PASSWORD": os.getenv("DB_PASSWORD", ""),
