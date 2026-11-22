@@ -12,7 +12,16 @@ Set `ACCOUNTS_REQUIRE_APPROVAL=False` in `backend/.env` to let new accounts sign
 
 Roles: Administrator, Property Manager, Front Desk, Housekeeping, Maintenance, Accounts.
 
-## 1. Database
+## Quick start (one command)
+
+Windows: double-click `start.bat` (or run `python run.py`). Mac/Linux: `./start.sh`.
+The first run installs everything, creates the MySQL database (asks for your MySQL admin password; XAMPP's is usually empty), creates the tables and asks you to create the first admin account. Later runs just start the backend and frontend and open the login page. Press Ctrl+C to stop.
+
+Needs Python 3.10+, Node.js 22.12+ and a running MySQL/MariaDB.
+
+## Manual setup
+
+### 1. Database
 
 ```bash
 mysql -u root -p < database/create_database.sql   # creates bnb_management + bnb_user
@@ -20,7 +29,7 @@ mysql -u root -p < database/create_database.sql   # creates bnb_management + bnb
 
 Change the `change-me` password in that file (or with `ALTER USER`) and use the same value in `backend/.env`.
 
-## 2. Backend (port 8000)
+### 2. Backend (port 8000)
 
 ```bash
 cd backend
@@ -33,7 +42,7 @@ python manage.py runserver
 python manage.py test accounts                         # run the tests
 ```
 
-### Auth API
+#### Auth API
 
 | Method | Path | Body / notes |
 | --- | --- | --- |
@@ -44,7 +53,7 @@ python manage.py test accounts                         # run the tests
 | GET | `/api/auth/me/` | `Authorization: Bearer <access>` |
 | GET | `/api/auth/roles/` | Roles an employee can pick at sign-up |
 
-## 3. Frontend (port 5173)
+### 3. Frontend (port 5173)
 
 ```bash
 cd frontend
