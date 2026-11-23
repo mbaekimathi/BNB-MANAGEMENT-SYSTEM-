@@ -62,10 +62,32 @@ class AuthFlowTests(APITestCase):
         self.assertEqual(User.objects.get(code="482913").role, User.Role.BRANCH_EMPLOYEE)
 
     def test_signup_validation(self):
-        res = self.signup(code="12ab", confirm_password="other", phone="", photo="")
+        res = self.signup(code="12ab", confirm_password="other", phone="")
         self.assertEqual(res.status_code, 400)
-        for field in ("code", "phone", "photo"):
+        for field in ("code", "phone"):
             self.assertIn(field, res.data)
+
+    def test_photo_is_optional(self):
+        data = signup_data()
+        del data["photo"]
+        res = self.client.post(reverse("auth-register"), data, format="multipart")
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertFalse(User.objects.get(code="482913").photo)
+        self.assertIsNone(res.data["user"]["photo"])
+
+    def test_six_digit_password_allowed_but_not_same_as_code(self):
+        res = self.signup(password="739104", confirm_password="739104")
+        self.assertEqual(res.status_code, 201, res.data)
+        User.objects.filter(code="482913").update(status=User.Status.ACTIVE)
+        self.assertEqual(self.login(password="739104").status_code, 200)
+        res = self.signup(code="555123", email="b@mail.test", password="555123", confirm_password="555123")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("password", res.data)
+
+    def test_short_non_pin_password_rejected(self):
+        res = self.signup(password="abc123", confirm_password="abc123")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("password", res.data)
 
     def test_code_and_email_must_be_unique(self):
         self.signup()

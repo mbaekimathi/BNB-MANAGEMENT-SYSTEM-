@@ -22,7 +22,10 @@ const empty: SignupPayload = {
   photo: null,
 }
 
+const isPin = (pw: string) => /^\d{6}$/.test(pw)
+
 function passwordScore(pw: string) {
+  if (isPin(pw)) return 2
   let score = 0
   if (pw.length >= 8) score++
   if (pw.length >= 12) score++
@@ -72,9 +75,10 @@ export default function SignupPage() {
     if (!/^\S+@\S+\.\S+$/.test(form.email.trim())) errs.email = 'Enter a valid email address.'
     if (!/^\+?[\d\s-]{9,20}$/.test(form.phone.trim())) errs.phone = 'Enter a valid phone number.'
     if (!/^\d{6}$/.test(form.code)) errs.code = 'Choose a 6-digit code. You will use it to sign in.'
-    if (form.password.length < 8) errs.password = 'Use at least 8 characters.'
+    if (isPin(form.password)) {
+      if (form.password === form.code) errs.password = "Your 6-digit password can't be the same as your sign-in code."
+    } else if (form.password.length < 8) errs.password = 'Use a 6-digit number or at least 8 characters.'
     if (form.confirm_password !== form.password) errs.confirm_password = 'Passwords do not match.'
-    if (!form.photo) errs.photo = 'Please add a profile picture.'
     return errs
   }
 
@@ -138,6 +142,9 @@ export default function SignupPage() {
           <motion.div custom={7} variants={section} className="space-y-4">
             <div>
               <Field label="Password" icon={LockKeyhole} type="password" autoComplete="new-password" value={form.password} onChange={text('password')} error={fields.password} />
+              {!form.password && !fields.password && (
+                <p className="px-1 pt-1.5 text-[11px] text-slate-500">Use a 6-digit number or at least 8 characters.</p>
+              )}
               {form.password && (
                 <div className="mt-2 flex items-center gap-3 px-1">
                   <div className="flex flex-1 gap-1.5">
@@ -145,7 +152,7 @@ export default function SignupPage() {
                       <span key={i} className={`h-1 flex-1 rounded-full transition-colors duration-300 ${i < score ? strength[score].color : 'bg-white/10'}`} />
                     ))}
                   </div>
-                  <span className="w-16 text-right text-[11px] text-slate-400">{strength[score].label}</span>
+                  <span className="w-20 text-right text-[11px] text-slate-400">{isPin(form.password) ? '6-digit PIN' : strength[score].label}</span>
                 </div>
               )}
             </div>

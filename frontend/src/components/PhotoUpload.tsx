@@ -3,7 +3,27 @@ import { Camera, ImagePlus, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 
 const MAX_BYTES = 3 * 1024 * 1024
+const MAX_SIDE = 1024
 const TYPES = ['image/jpeg', 'image/png', 'image/webp']
+
+/** Shrinks big photos (e.g. straight from a phone camera) to at most 1024px, saved as JPEG. */
+async function shrink(file: File): Promise<File> {
+  const bitmap = await createImageBitmap(file)
+  const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height))
+  if (scale === 1 && file.size <= 1024 * 1024) return file
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.round(bitmap.width * scale)
+  canvas.height = Math.round(bitmap.height * scale)
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return file
+  ctx.fillStyle = '#fff'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+  bitmap.close()
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85))
+  if (!blob) return file
+  return new File([blob], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' })
+}
 
 interface PhotoUploadProps {
   file: File | null
@@ -22,17 +42,23 @@ export function PhotoUpload({ file, onChange, error, onError }: PhotoUploadProps
     return () => URL.revokeObjectURL(preview)
   }, [preview])
 
-  function pick(f: File | undefined) {
+  async function pick(f: File | undefined) {
     if (!f) return
     if (!TYPES.includes(f.type)) return onError('Use a JPG, PNG or WebP picture.')
-    if (f.size > MAX_BYTES) return onError('The picture must be smaller than 3 MB.')
-    onChange(f)
+    let out = f
+    try {
+      out = await shrink(f)
+    } catch {
+      return onError("This picture couldn't be read. Try another one.")
+    }
+    if (out.size > MAX_BYTES) return onError('This picture is too large. Try another one.')
+    onChange(out)
   }
 
   function onDrop(e: DragEvent) {
     e.preventDefault()
     setDragging(false)
-    pick(e.dataTransfer.files[0])
+    void pick(e.dataTransfer.files[0])
   }
 
   return (
@@ -76,8 +102,12 @@ export function PhotoUpload({ file, onChange, error, onError }: PhotoUploadProps
           </span>
         </button>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-white">{file ? 'Profile picture added' : 'Upload a profile picture'}</p>
-          <p className="truncate text-xs text-slate-400">{file ? file.name : 'Drag it here or tap the circle · JPG, PNG, WebP · up to 3 MB'}</p>
+          <p className="text-sm font-medium text-white">{file ? 'Profile picture added' : (
+            <>
+              Upload a profile picture <span className="font-normal text-slate-500">(optional)</span>
+            </>
+          )}</p>
+          <p className="truncate text-xs text-slate-400">{file ? file.name : 'Drag it here or tap the circle · JPG, PNG or WebP'}</p>
         </div>
         {file && (
           <button
@@ -95,7 +125,7 @@ export function PhotoUpload({ file, onChange, error, onError }: PhotoUploadProps
           accept={TYPES.join(',')}
           className="hidden"
           onChange={(e) => {
-            pick(e.target.files?.[0])
+            void pick(e.target.files?.[0])
             e.target.value = ''
           }}
         />

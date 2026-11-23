@@ -1,3 +1,5 @@
+import re
+
 from django.conf import settings
 from django.contrib.auth import password_validation
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -7,6 +9,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User, six_digit_code
 
 MAX_PHOTO_BYTES = 3 * 1024 * 1024
+PIN_RE = re.compile(r"\d{6}")
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -33,7 +36,7 @@ class RegisterSerializer(serializers.ModelSerializer):
     code = serializers.CharField(validators=[six_digit_code])
     password = serializers.CharField(write_only=True, trim_whitespace=False)
     confirm_password = serializers.CharField(write_only=True, trim_whitespace=False)
-    photo = serializers.ImageField(required=True)
+    photo = serializers.ImageField(required=False, allow_null=True)
 
     class Meta:
         model = User
@@ -63,26 +66,34 @@ class RegisterSerializer(serializers.ModelSerializer):
         return value
 
     def validate_photo(self, value):
-        if value.size > MAX_PHOTO_BYTES:
+        if value and value.size > MAX_PHOTO_BYTES:
             raise serializers.ValidationError("The picture must be smaller than 3 MB.")
         return value
 
     def validate(self, attrs):
         if attrs["password"] != attrs.pop("confirm_password"):
             raise serializers.ValidationError({"confirm_password": "Passwords do not match."})
+        password = attrs["password"]
+        if PIN_RE.fullmatch(password):
+            if password == attrs.get("code"):
+                raise serializers.ValidationError(
+                    {"password": "Your 6-digit password can't be the same as your sign-in code."}
+                )
+            return attrs
         candidate = User(**{k: v for k, v in attrs.items() if k not in ("password", "photo")})
         try:
-            password_validation.validate_password(attrs["password"], candidate)
+            password_validation.validate_password(password, candidate)
         except DjangoValidationError as exc:
             raise serializers.ValidationError({"password": list(exc.messages)})
         return attrs
 
     def create(self, validated_data):
-        photo = validated_data.pop("photo")
+        photo = validated_data.pop("photo", None)
         user = User.objects.create_user(
             role=User.Role.BRANCH_EMPLOYEE, status=User.Status.PENDING, **validated_data
         )
-        user.photo.save(photo.name, photo, save=True)
+        if photo:
+            user.photo.save(photo.name, photo, save=True)
         return user
 
 
