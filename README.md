@@ -9,7 +9,6 @@
 Employees sign in with their **6-digit code** and password, and land on their role's page (e.g. `/branch-employee`).
 New sign-ups choose their own code, upload a profile picture, join as **Branch Employee** and stay
 **Pending activation** until an admin activates them in Django admin (`/admin/` → Users → "Activate selected employees").
-Set `ACCOUNTS_REQUIRE_APPROVAL=False` in `backend/.env` to let new accounts sign in straight away.
 
 Roles: Admin, Company Manager, IT Support, Company Store Manager, Branch Store Manager, Branch Manager,
 Branch Receptionist, Branch Employee. Admins change an employee's role in Django admin.
