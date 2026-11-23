@@ -1,5 +1,5 @@
 from django.contrib.auth.models import update_last_login
-from rest_framework import generics, permissions, status
+from rest_framework import generics, parsers, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
@@ -19,24 +19,26 @@ class LoginView(APIView):
         user = serializer.validated_data["user"]
         tokens = serializer.tokens_for(user, serializer.validated_data["remember_me"])
         update_last_login(None, user)
-        return Response({**tokens, "user": UserSerializer(user).data})
+        return Response({**tokens, "user": UserSerializer(user, context={"request": request}).data})
 
 
 class RegisterView(generics.CreateAPIView):
     permission_classes = [permissions.AllowAny]
     serializer_class = RegisterSerializer
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser]
     throttle_scope = "auth"
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-        message = (
-            "Account created. A manager needs to approve it before you can sign in."
-            if user.status == User.Status.PENDING
-            else "Account created. You can sign in now."
+        return Response(
+            {
+                "message": "Account created. It is pending activation — you can sign in once it is approved.",
+                "user": UserSerializer(user, context={"request": request}).data,
+            },
+            status=status.HTTP_201_CREATED,
         )
-        return Response({"message": message, "user": UserSerializer(user).data}, status=status.HTTP_201_CREATED)
 
 
 class LogoutView(APIView):
@@ -59,4 +61,4 @@ class RolesView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
-        return Response([{"value": r.value, "label": r.label} for r in User.SELF_SIGNUP_ROLES])
+        return Response([{"value": r.value, "label": r.label} for r in User.Role])

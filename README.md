@@ -3,14 +3,16 @@
 | Part | Stack |
 | --- | --- |
 | `frontend/` | React 19, Vite, TypeScript, Tailwind CSS 4, Framer Motion, React Router |
-| `backend/` | Django 5.1, Django REST Framework, SimpleJWT, django-cors-headers |
+| `backend/` | Django 5.1, Django REST Framework, SimpleJWT, django-cors-headers, Pillow |
 | `database/` | MySQL / MariaDB (`utf8mb4`) |
 
-Employees sign in with their work email **or** employee ID (e.g. `EMP-0002`). New sign-ups are
-`pending` until a manager/admin approves them in Django admin (`/admin/` → Users → "Approve selected employees").
+Employees sign in with their **6-digit code** and password, and land on their role's page (e.g. `/branch-employee`).
+New sign-ups choose their own code, upload a profile picture, join as **Branch Employee** and stay
+**Pending activation** until an admin activates them in Django admin (`/admin/` → Users → "Activate selected employees").
 Set `ACCOUNTS_REQUIRE_APPROVAL=False` in `backend/.env` to let new accounts sign in straight away.
 
-Roles: Administrator, Property Manager, Front Desk, Housekeeping, Maintenance, Accounts.
+Roles: Admin, Company Manager, IT Support, Company Store Manager, Branch Store Manager, Branch Manager,
+Branch Receptionist, Branch Employee. Admins change an employee's role in Django admin.
 
 ## Quick start (one command)
 
@@ -37,7 +39,7 @@ python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\
 pip install -r requirements.txt
 cp .env.example .env                                   # then edit DB_PASSWORD, DJANGO_SECRET_KEY
 python manage.py migrate
-python manage.py createsuperuser                       # first admin account (EMP-0001)
+python manage.py createsuperuser                       # first admin account (asks for a 6-digit code)
 python manage.py runserver
 python manage.py test accounts                         # run the tests
 ```
@@ -46,12 +48,12 @@ python manage.py test accounts                         # run the tests
 
 | Method | Path | Body / notes |
 | --- | --- | --- |
-| POST | `/api/auth/login/` | `identifier` (email or employee ID), `password`, `remember_me` → `access`, `refresh`, `user` |
-| POST | `/api/auth/register/` | `first_name`, `last_name`, `email`, `phone`, `role`, `password`, `confirm_password` |
+| POST | `/api/auth/login/` | `code` (6 digits), `password`, `remember_me` → `access`, `refresh`, `user` |
+| POST | `/api/auth/register/` | multipart: `first_name`, `last_name`, `email`, `phone`, `code`, `password`, `confirm_password`, `photo` |
 | POST | `/api/auth/refresh/` | `refresh` → new `access` (+ rotated `refresh`) |
 | POST | `/api/auth/logout/` | `refresh` (blacklists it) |
 | GET | `/api/auth/me/` | `Authorization: Bearer <access>` |
-| GET | `/api/auth/roles/` | Roles an employee can pick at sign-up |
+| GET | `/api/auth/roles/` | All roles |
 
 ### 3. Frontend (port 5173)
 

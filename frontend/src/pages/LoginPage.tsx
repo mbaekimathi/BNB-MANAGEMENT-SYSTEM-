@@ -1,14 +1,16 @@
 import { motion } from 'framer-motion'
-import { IdCard, LockKeyhole } from 'lucide-react'
+import { LockKeyhole } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Alert } from '../components/Alert'
 import { AuthLayout } from '../components/AuthLayout'
+import { CodeInput } from '../components/CodeInput'
 import { Field } from '../components/Field'
 import { greetingFor, useNow } from '../lib/time'
 import { SubmitButton } from '../components/SubmitButton'
 import { useAuth } from '../context/AuthContext'
 import { parseApiError, type FieldErrors } from '../lib/api'
+import { rolePath } from '../lib/roles'
 
 const item = {
   hidden: { opacity: 0, y: 14 },
@@ -22,7 +24,7 @@ export default function LoginPage() {
   const location = useLocation()
   const notice = (location.state as { notice?: string } | null)?.notice
 
-  const [identifier, setIdentifier] = useState('')
+  const [code, setCode] = useState('')
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(true)
   const [loading, setLoading] = useState(false)
@@ -32,7 +34,7 @@ export default function LoginPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     const errs: FieldErrors = {}
-    if (!identifier.trim()) errs.identifier = 'Enter your work email or employee ID.'
+    if (!/^\d{6}$/.test(code)) errs.code = 'Enter your 6-digit code.'
     if (!password) errs.password = 'Enter your password.'
     setFields(errs)
     setError('')
@@ -40,9 +42,8 @@ export default function LoginPage() {
 
     setLoading(true)
     try {
-      await login(identifier.trim(), password, remember)
-      const from = (location.state as { from?: string } | null)?.from
-      navigate(from && from !== '/login' ? from : '/dashboard', { replace: true })
+      const user = await login(code, password, remember)
+      navigate(rolePath(user.role), { replace: true })
     } catch (err) {
       const parsed = parseApiError(err)
       setError(parsed.message)
@@ -62,7 +63,7 @@ export default function LoginPage() {
           Welcome back
         </motion.h2>
         <motion.p custom={2} variants={item} className="mt-2 text-sm text-slate-400">
-          Sign in to your employee account to manage today's stays.
+          Enter your 6-digit code and password to open your workspace.
         </motion.p>
 
         <form onSubmit={onSubmit} noValidate className="mt-8 space-y-4">
@@ -71,15 +72,7 @@ export default function LoginPage() {
             <Alert message={error} />
           </motion.div>
           <motion.div custom={4} variants={item}>
-            <Field
-              label="Work email or employee ID"
-              icon={IdCard}
-              autoComplete="username"
-              autoFocus
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
-              error={fields.identifier}
-            />
+            <CodeInput label="Your 6-digit code" value={code} onChange={setCode} error={fields.code} autoFocus />
           </motion.div>
           <motion.div custom={5} variants={item}>
             <Field

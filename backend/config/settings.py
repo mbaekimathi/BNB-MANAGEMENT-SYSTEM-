@@ -95,6 +95,9 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+MEDIA_URL = "media/"
+MEDIA_ROOT = BASE_DIR / "media"
+DATA_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
@@ -123,6 +126,3 @@ SIMPLE_JWT = {
 
 CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
 CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
-
-# New employee sign-ups wait for a manager/admin to approve them before they can sign in.
-ACCOUNTS_REQUIRE_APPROVAL = env_bool("ACCOUNTS_REQUIRE_APPROVAL", True)

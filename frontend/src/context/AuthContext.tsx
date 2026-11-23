@@ -4,7 +4,7 @@ import { api, tokens, type Employee, type LoginResponse, type SignupPayload } fr
 interface AuthState {
   user: Employee | null
   loading: boolean
-  login: (identifier: string, password: string, remember: boolean) => Promise<Employee>
+  login: (code: string, password: string, remember: boolean) => Promise<Employee>
   signup: (payload: SignupPayload) => Promise<{ message: string; user: Employee }>
   logout: () => Promise<void>
 }
@@ -24,15 +24,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false))
   }, [])
 
-  const login = useCallback(async (identifier: string, password: string, remember: boolean) => {
-    const { data } = await api.post<LoginResponse>('/auth/login/', { identifier, password, remember_me: remember })
+  const login = useCallback(async (code: string, password: string, remember: boolean) => {
+    const { data } = await api.post<LoginResponse>('/auth/login/', { code, password, remember_me: remember })
     tokens.save(data.access, data.refresh, remember)
     setUser(data.user)
     return data.user
   }, [])
 
   const signup = useCallback(async (payload: SignupPayload) => {
-    const { data } = await api.post<{ message: string; user: Employee }>('/auth/register/', payload)
+    const form = new FormData()
+    for (const [key, value] of Object.entries(payload)) {
+      if (value !== null) form.append(key, value)
+    }
+    const { data } = await api.post<{ message: string; user: Employee }>('/auth/register/', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
     return data
   }, [])
 

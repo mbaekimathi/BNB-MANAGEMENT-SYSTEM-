@@ -7,7 +7,7 @@ const highlights = [
   { icon: CalendarCheck2, title: 'Reservations & calendar', text: 'Every booking, check-in and check-out on one live calendar.' },
   { icon: Sparkles, title: 'Housekeeping', text: 'Room status updates the moment a room is cleaned and ready.' },
   { icon: Wallet, title: 'Payments', text: 'Deposits, balances and receipts tracked for every stay.' },
-  { icon: Users, title: 'Your whole team', text: 'Front desk, housekeeping, maintenance and managers — each with the right access.' },
+  { icon: Users, title: 'Your whole team', text: 'Company, branch and store teams — each sign in with their own code to their own workspace.' },
 ]
 
 const rooms = [

@@ -1,18 +1,28 @@
 import axios, { AxiosError } from 'axios'
 
-export type Role = 'admin' | 'manager' | 'receptionist' | 'housekeeping' | 'maintenance' | 'accountant'
+export type Role =
+  | 'admin'
+  | 'company_manager'
+  | 'it_support'
+  | 'company_store_manager'
+  | 'branch_store_manager'
+  | 'branch_manager'
+  | 'branch_receptionist'
+  | 'branch_employee'
 
 export interface Employee {
   id: number
-  employee_id: string
+  code: string
   email: string
   first_name: string
   last_name: string
   full_name: string
   phone: string
+  photo: string | null
   role: Role
   role_label: string
   status: 'pending' | 'active' | 'suspended'
+  status_label: string
   last_login: string | null
   created_at: string
 }
@@ -28,9 +38,10 @@ export interface SignupPayload {
   last_name: string
   email: string
   phone: string
-  role: Exclude<Role, 'admin'>
+  code: string
   password: string
   confirm_password: string
+  photo: File | null
 }
 
 const ACCESS_KEY = 'haven.access'

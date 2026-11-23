@@ -1,12 +1,12 @@
 import { AnimatePresence } from 'framer-motion'
 import { lazy, Suspense } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
-import { FullScreenLoader, GuestRoute, ProtectedRoute } from './components/ProtectedRoute'
+import { FullScreenLoader, GuestRoute, RoleRoute } from './components/ProtectedRoute'
 import { AuthProvider } from './context/AuthContext'
 import LoginPage from './pages/LoginPage'
 
 const SignupPage = lazy(() => import('./pages/SignupPage'))
-const DashboardPage = lazy(() => import('./pages/DashboardPage'))
+const RolePage = lazy(() => import('./pages/RolePage'))
 
 function AnimatedRoutes() {
   const location = useLocation()
@@ -17,7 +17,7 @@ function AnimatedRoutes() {
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
           <Route path="/signup" element={<GuestRoute><SignupPage /></GuestRoute>} />
-          <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+          <Route path="/:roleSlug" element={<RoleRoute><RolePage /></RoleRoute>} />
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </Suspense>

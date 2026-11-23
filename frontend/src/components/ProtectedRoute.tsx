@@ -1,7 +1,8 @@
 import { Loader2 } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { Navigate, useLocation } from 'react-router-dom'
+import { Navigate, useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { roleFromSlug, rolePath } from '../lib/roles'
 
 export function FullScreenLoader() {
   return (
@@ -11,17 +12,19 @@ export function FullScreenLoader() {
   )
 }
 
-export function ProtectedRoute({ children }: { children: ReactNode }) {
+/** Only lets an employee open their own role's page; anyone else is sent to theirs (or to login). */
+export function RoleRoute({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth()
-  const location = useLocation()
+  const { roleSlug } = useParams()
   if (loading) return <FullScreenLoader />
-  if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />
+  if (!user) return <Navigate to="/login" replace />
+  if (roleFromSlug(roleSlug) !== user.role) return <Navigate to={rolePath(user.role)} replace />
   return children
 }
 
 export function GuestRoute({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth()
   if (loading) return <FullScreenLoader />
-  if (user) return <Navigate to="/dashboard" replace />
+  if (user) return <Navigate to={rolePath(user.role)} replace />
   return children
 }
