@@ -13,11 +13,11 @@ function AnimatedRoutes() {
   return (
     <AnimatePresence mode="wait">
       <Suspense fallback={<FullScreenLoader />}>
-        <Routes location={location} key={location.pathname}>
+        <Routes location={location} key={location.pathname.split('/')[1]}>
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
           <Route path="/signup" element={<GuestRoute><SignupPage /></GuestRoute>} />
-          <Route path="/:roleSlug" element={<RoleRoute><RolePage /></RoleRoute>} />
+          <Route path="/:roleSlug/*" element={<RoleRoute><RolePage /></RoleRoute>} />
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </Suspense>
