@@ -16,13 +16,22 @@ step "Pulling latest code from GitHub"
 git pull --ff-only || fail "git pull failed — commit or stash local changes first."
 
 # --- Backend ---
-VENV_PY="$ROOT/backend/.venv/bin/python"
-[ -x "$VENV_PY" ] || VENV_PY="$ROOT/backend/.venv/Scripts/python.exe"   # Windows venv layout
-[ -x "$VENV_PY" ] || fail "No virtualenv at backend/.venv — run ./start.sh once to create it."
+# Prefer an already-active virtualenv (e.g. cPanel "Setup Python App"); then backend/.venv.
+if [ -n "${PYTHON:-}" ]; then
+  VENV_PY="$PYTHON"
+elif [ -n "${VIRTUAL_ENV:-}" ] && [ -x "$VIRTUAL_ENV/bin/python" ]; then
+  VENV_PY="$VIRTUAL_ENV/bin/python"
+else
+  VENV_PY="$ROOT/backend/.venv/bin/python"
+  [ -x "$VENV_PY" ] || VENV_PY="$ROOT/backend/.venv/Scripts/python.exe"   # Windows venv layout
+fi
+[ -x "$VENV_PY" ] || command -v "$VENV_PY" >/dev/null 2>&1 || \
+  fail "No Python virtualenv found — activate your app's venv first, or run ./start.sh once to create backend/.venv"
+echo "Using Python: $VENV_PY"
 
 step "Backend: Python packages"
 REQ_HASH="$(hash_of backend/requirements.txt)"
-STAMP="backend/.venv/.requirements.sha256"
+STAMP="$(dirname "$VENV_PY")/../.requirements.sha256"
 if [ ! -f "$STAMP" ] || [ "$(cat "$STAMP")" != "$REQ_HASH" ]; then
   "$VENV_PY" -m pip install -r backend/requirements.txt
   echo "$REQ_HASH" > "$STAMP"
