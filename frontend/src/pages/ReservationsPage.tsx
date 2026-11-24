@@ -495,7 +495,6 @@ function RegisterForm({ t, rooms, bookings, onDone }: { t: WorkspaceTheme; rooms
     for (const r of rooms) if (!seen.has(r.room_type)) seen.set(r.room_type, r.type_label)
     return [...seen.entries()].map(([value, label]) => ({ value, label }))
   }, [rooms])
-  const shownRooms = roomType ? rooms.filter((r) => r.room_type === roomType) : rooms
 
   // Extra guest details stay open once anything is filled or rejected.
   const extras = !!(form.guest_email || form.guest_id_number || form.guest_nationality || form.guest_notes)
@@ -604,6 +603,231 @@ function RegisterForm({ t, rooms, bookings, onDone }: { t: WorkspaceTheme; rooms
     )
   }
 
+  const dFmt = (d: Date) => d.toLocaleDateString([], { day: 'numeric', month: 'short' })
+
+  /** Photo-card room grid shared by the main guest's popup and each extra guest's.
+   *  `note` adds a tail to the status line ("main room", "shared with guest 3"). */
+  const roomGrid = (type: string, setType: (v: string) => void, sel: string, ok: (r: Room) => boolean, pick: (id: string) => void, note?: (r: Room) => string) => {
+    const list = type ? rooms.filter((r) => r.room_type === type) : rooms
+    return (
+      <div className="flex min-w-0 flex-col gap-2">
+        <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Room type">
+          {[{ value: '', label: 'All types' }, ...roomTypes].map((o) => (
+            <button
+              key={o.value} type="button" role="radio" aria-checked={type === o.value}
+              onClick={() => setType(o.value)}
+              className={`h-8 px-3 text-xs font-semibold transition ${t.radius} ${type === o.value ? t.navActive : t.chip}`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+        {!list.length ? (
+          <p className={`px-3 py-2.5 text-xs ${t.radius} ${t.chip}`}>No rooms in this category.</p>
+        ) : (
+          <div className="grid max-h-72 gap-2 overflow-y-auto pr-1 sm:grid-cols-2" role="radiogroup" aria-label="Room">
+            {list.map((r) => {
+              const free = ok(r)
+              const selR = sel === String(r.id)
+              const extra = note?.(r)
+              return (
+                <button
+                  key={r.id} type="button" role="radio" aria-checked={selR} disabled={!free && !selR}
+                  onClick={() => pick(String(r.id))}
+                  className={`flex items-center gap-3 p-2.5 text-left transition disabled:cursor-not-allowed ${t.radius} ${
+                    selR ? t.navActive : free ? `${t.chip} ${t.cardHover}` : `${t.chip} opacity-50`
+                  }`}
+                >
+                  <span className={`grid size-12 shrink-0 place-items-center overflow-hidden ${t.radius} ${selR ? 'bg-white/15' : t.iconBox}`}>
+                    {r.photo ? <img src={r.photo} alt="" loading="lazy" className="size-full object-cover" /> : <BedDouble className="size-5" />}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold">{r.name}</span>
+                    <span className={`block truncate text-[11px] ${selR ? 'opacity-75' : t.muted}`}>
+                      {r.type_label} · {formatMoney(r.price)}/night · sleeps {r.capacity}
+                    </span>
+                    <span className={`mt-0.5 block truncate text-[10px] font-medium uppercase tracking-wide ${
+                      free ? (selR ? 'opacity-80' : 'text-emerald-600 dark:text-emerald-400') : 'opacity-60'
+                    }`}>
+                      {free ? `Available${extra ? ` · ${extra}` : ''}` : extra ?? (r.status !== 'active' ? r.status_label : 'Booked for that period')}
+                    </span>
+                  </span>
+                  {selR && <Check className="size-4 shrink-0" />}
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  /** The room & dates strip at the foot of a guest's card — opens the allocate popup. */
+  const stayRow = (k: number) => {
+    const main = k < 0
+    const c = main ? undefined : companions[k]
+    const room = main ? chosen : rooms.find((r) => r.id === Number(c?.room))
+    const { s, e, d } = main ? { s: start, e: end, d: days } : cDates(c!)
+    const err = main ? errors.start || errors.days || errors.room : undefined
+    return (
+      <>
+        <button
+          type="button" onClick={() => setEditing(k)}
+          className={`flex w-full items-center gap-3 border-t px-3 py-2.5 text-left transition hover:brightness-[0.98] dark:hover:brightness-110 ${t.sidebarDivider}`}
+        >
+          <span className={`grid size-8 shrink-0 place-items-center ${t.radius} ${room ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : t.iconBox}`}>
+            <BedDouble className="size-4" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className={`block truncate text-xs ${room ? 'font-semibold' : `font-medium ${t.muted}`}`}>
+              {room ? `${room.name} · ${room.type_label}` : main ? 'Pick their room & dates' : `Shares ${chosen ? chosen.name : 'the main room'}`}
+            </span>
+            <span className={`block truncate text-[10px] ${t.muted}`}>
+              {s && e ? `${dFmt(s)} → ${dFmt(e)} · ${d} ${d === 1 ? 'night' : 'nights'}` : 'Dates not set yet'}
+            </span>
+          </span>
+          <span className={`flex shrink-0 items-center gap-1 text-[11px] font-semibold ${t.muted}`}>
+            <CalendarClock className="size-3.5" />{room || !main ? 'Change' : 'Allocate'}
+          </span>
+        </button>
+        {err && <p className={`border-t px-3 py-1.5 text-[11px] text-rose-500 ${t.sidebarDivider}`}>{err}</p>}
+        {main && !errors.room && chosen && !usable(chosen) && (
+          <p className={`border-t px-3 py-1.5 text-[11px] text-rose-500 ${t.sidebarDivider}`}>{chosen.name} isn't free for that period — pick another room.</p>
+        )}
+      </>
+    )
+  }
+
+  /** Per-guest popup: allocate or change their room and dates. `editing` -1 = main guest. */
+  const stayDialog = () => {
+    if (editing === null) return null
+    const main = editing < 0
+    const c = main ? undefined : companions[editing]
+    if (!main && !c) return null
+    const cStay = c ? cDates(c) : null
+    const cBusy = cStay ? busyFor(cStay.s, cStay.e) : new Set<number>()
+    const cOk = (r: Room) => r.status === 'active' && !cBusy.has(r.id) && r.id !== chosen?.id
+    const title = main ? `Guest 1 · ${form.guest_name.trim() || 'main contact'}` : `Guest ${editing + 2} · ${c!.name.trim() || 'extra guest'}`
+    return (
+      <motion.div
+        className="fixed inset-0 z-[60] grid place-items-center overflow-y-auto p-4"
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      >
+        <button type="button" aria-label="Close" onClick={() => setEditing(null)} className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" />
+        <motion.div
+          role="dialog" aria-modal="true" aria-label={title}
+          initial={{ scale: 0.94, y: 12 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.96, y: 8 }}
+          transition={{ type: 'spring', stiffness: 340, damping: 30 }}
+          className={`relative my-auto flex max-h-[calc(100vh-2rem)] w-full max-w-xl flex-col overflow-hidden shadow-2xl ${t.radius} ${t.root}`}
+        >
+          <header className="flex items-center justify-between gap-3 border-b border-slate-900/10 px-5 py-4 dark:border-white/10">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className={`grid size-10 shrink-0 place-items-center ${t.radius} ${t.iconBox}`}>
+                <CalendarClock className="size-5" />
+              </span>
+              <div className="min-w-0">
+                <h3 className={`truncate text-base ${t.heading}`}>{title}</h3>
+                <p className={`text-xs ${t.muted}`}>{main ? 'The booking dates and the main room.' : 'Their room and when they stay.'}</p>
+              </div>
+            </div>
+            <button type="button" onClick={() => setEditing(null)} aria-label="Close" className={`grid size-9 shrink-0 place-items-center ${t.radius} ${t.iconButton}`}>
+              <X className="size-4" />
+            </button>
+          </header>
+
+          <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
+            {main ? (
+              <>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Input
+                    t={t} label={mode === 'reserve' ? 'Moving in — date & time' : 'Check-in — date & time'}
+                    type="datetime-local" value={form.start} onChange={set('start')} error={errors.start} required
+                  />
+                  <Stepper t={t} label="Length of stay" value={days} min={1} max={365} onChange={(v) => put('days', String(v))} error={errors.days} suffix={days === 1 ? 'night' : 'nights'} />
+                </div>
+                <div className={`flex items-center gap-2 px-3 py-2 text-xs ${t.radius} ${t.chip}`}>
+                  <Clock className={`size-3.5 shrink-0 ${t.muted}`} />
+                  {end ? (
+                    <span>{mode === 'reserve' ? 'Reserved until' : 'Checks out'} <b>{end.toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</b> · {days} {days === 1 ? 'night' : 'nights'}</span>
+                  ) : (
+                    <span className={t.muted}>Pick the {mode === 'reserve' ? 'move-in' : 'check-in'} date to see the end date.</span>
+                  )}
+                </div>
+                <section>
+                  <legend className={`mb-2 text-xs font-semibold uppercase tracking-wider ${t.muted}`}>Room</legend>
+                  {roomGrid(roomType, setRoomType, form.room, usable, (id) => put('room', id))}
+                  {errors.room && <span className="mt-1 block text-[11px] text-rose-500">{errors.room}</span>}
+                </section>
+              </>
+            ) : (
+              <>
+                <div className="flex min-w-0 flex-col gap-1">
+                  <span className={`text-[11px] font-medium ${t.muted}`}>Their dates</span>
+                  <div className={`grid grid-cols-2 gap-1 p-1 ${t.radius} ${t.chip}`} role="radiogroup" aria-label="Guest dates">
+                    {([false, true] as const).map((v) => (
+                      <button
+                        key={String(v)} type="button" role="radio" aria-checked={c!.ownDates === v} disabled={!c!.room}
+                        onClick={() => {
+                          setC(editing, 'ownDates', v)
+                          if (v) { if (!c!.start) setC(editing, 'start', form.start); if (!c!.days) setC(editing, 'days', form.days) }
+                        }}
+                        className={`flex h-8 items-center justify-center gap-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${t.radius} ${c!.ownDates === v ? t.navActive : 'opacity-70 hover:opacity-100'}`}
+                      >
+                        {v ? 'Own dates' : 'Same as booking'}
+                      </button>
+                    ))}
+                  </div>
+                  {!c!.room && <span className={`text-[11px] ${t.muted}`}>They follow the booking dates while sharing the main room — pick a room below for own dates.</span>}
+                </div>
+                {c!.ownDates && c!.room && cStay && (
+                  <>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Input t={t} label="Check-in — date & time" type="datetime-local" value={c!.start} onChange={(e) => setC(editing, 'start', e.target.value)} />
+                      <Stepper t={t} label="Length of stay" value={Math.max(1, parseInt(c!.days, 10) || days)} min={1} max={365} onChange={(v) => setC(editing, 'days', String(v))} suffix={Math.max(1, parseInt(c!.days, 10) || days) === 1 ? 'night' : 'nights'} />
+                    </div>
+                    {cStay.e && (
+                      <div className={`flex items-center gap-2 px-3 py-2 text-xs ${t.radius} ${t.chip}`}>
+                        <Clock className={`size-3.5 shrink-0 ${t.muted}`} />
+                        <span>Checks out <b>{cStay.e.toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</b></span>
+                      </div>
+                    )}
+                  </>
+                )}
+                <section>
+                  <legend className={`mb-2 text-xs font-semibold uppercase tracking-wider ${t.muted}`}>Their room</legend>
+                  <div className="flex min-w-0 flex-col gap-2">
+                    <button
+                      type="button" role="radio" aria-checked={!c!.room}
+                      onClick={() => { setC(editing, 'room', ''); setC(editing, 'ownDates', false) }}
+                      className={`flex items-center gap-3 p-2.5 text-left transition ${t.radius} ${!c!.room ? t.navActive : `${t.chip} ${t.cardHover}`}`}
+                    >
+                      <span className={`grid size-12 shrink-0 place-items-center ${t.radius} ${!c!.room ? 'bg-white/15' : t.iconBox}`}>
+                        <Users className="size-5" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold">Shares the main room{chosen ? ` · ${chosen.name}` : ''}</span>
+                        <span className={`block truncate text-[11px] ${!c!.room ? 'opacity-75' : t.muted}`}>Follows the booking dates — nothing extra to pay</span>
+                      </span>
+                      {!c!.room && <Check className="size-4 shrink-0" />}
+                    </button>
+                    {roomGrid(
+                      c!.type, (v) => setC(editing, 'type', v), c!.room, cOk, (id) => setC(editing, 'room', id),
+                      (r) => r.id === chosen?.id ? 'Main room' : (() => { const j = companions.findIndex((o, x) => x !== editing && Number(o.room) === r.id); return j >= 0 ? `Shared with guest ${j + 2}` : '' })(),
+                    )}
+                  </div>
+                </section>
+              </>
+            )}
+          </div>
+
+          <footer className="flex justify-end gap-2 border-t border-slate-900/10 px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] dark:border-white/10">
+            <Button t={t} onClick={() => setEditing(null)}>Done</Button>
+          </footer>
+        </motion.div>
+      </motion.div>
+    )
+  }
+
   return (
     <form onSubmit={save} className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <div className="space-y-5">
@@ -614,17 +838,18 @@ function RegisterForm({ t, rooms, bookings, onDone }: { t: WorkspaceTheme; rooms
           </div>
         </Step>
 
-        <Step t={t} n={2} title="Who's staying?" text="Add every person in the party — the first guest is the contact.">
+        <Step t={t} n={2} title="Who's staying, when & where?" text="Add every person — each guest gets their own details, room and dates.">
           <div className="grid items-end gap-4 sm:grid-cols-2">
             <Stepper t={t} label="People in the party" value={guests} min={1} max={30} onChange={setGuests} error={errors.guests} suffix={guests === 1 ? 'guest' : 'guests'} />
-            <p className={`hidden pb-2 text-[11px] leading-snug sm:block ${t.muted}`}>Every guest gets their own details — and can pick their own room in step 3.</p>
+            <p className={`hidden pb-2 text-[11px] leading-snug sm:block ${t.muted}`}>Every guest gets their own details — and a room &amp; dates strip at the foot of their card.</p>
           </div>
 
-          <div className={`mt-4 grid gap-4 p-3 sm:grid-cols-2 ${t.radius} ${t.chip}`}>
-            <p className="flex items-center gap-2 text-xs font-semibold sm:col-span-2">
-              <span className={`grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-bold ${t.iconBox}`}>1</span>
-              Guest 1 · main contact
-            </p>
+          <div className={`mt-4 overflow-hidden ${t.radius} ${t.chip}`}>
+            <div className="grid gap-4 p-3 sm:grid-cols-2">
+              <p className="flex items-center gap-2 text-xs font-semibold sm:col-span-2">
+                <span className={`grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-bold ${t.iconBox}`}>1</span>
+                Guest 1 · main contact
+              </p>
             <Input t={t} label="Full name" value={form.guest_name} onChange={set('guest_name')} error={errors.guest_name} placeholder="e.g. Jane Mwangi" autoComplete="off" required />
             <PhoneInput t={t} label="Phone number" value={form.guest_phone} onChange={(v) => put('guest_phone', v)} error={errors.guest_phone} required />
             <div className="sm:col-span-2">
@@ -662,187 +887,60 @@ function RegisterForm({ t, rooms, bookings, onDone }: { t: WorkspaceTheme; rooms
                 )}
               </AnimatePresence>
             </div>
+            </div>
+            {stayRow(-1)}
           </div>
 
           {companions.map((c, i) => {
             const cMore = c.more || !!(c.email || c.nationality || c.id_number || c.notes)
             return (
-              <div key={i} className={`mt-2 grid gap-4 p-3 sm:grid-cols-2 ${t.radius} ${t.chip}`}>
-                <p className="flex items-center gap-2 text-xs font-semibold sm:col-span-2">
-                  <span className={`grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-bold ${t.iconBox}`}>{i + 2}</span>
-                  Guest {i + 2}
-                </p>
-                <Input t={t} label="Full name" value={c.name} onChange={(e) => setC(i, 'name', e.target.value)} placeholder="e.g. John Mwangi" autoComplete="off" required />
-                <PhoneInput t={t} label="Phone number" value={c.phone} onChange={(v) => setC(i, 'phone', v)} />
-                <div className="sm:col-span-2">
-                  <button
-                    type="button" onClick={() => setC(i, 'more', !cMore)} aria-expanded={cMore}
-                    className={`flex items-center gap-1.5 text-xs font-semibold ${t.muted} transition hover:text-inherit`}
-                  >
-                    <ChevronDown className={`size-3.5 transition ${cMore ? 'rotate-180' : ''}`} />
-                    {cMore ? 'Hide extra details' : 'Add ID, email, nationality & requests'}
-                  </button>
-                  <AnimatePresence initial={false}>
-                    {cMore && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }}
-                        className="overflow-hidden"
-                      >
-                        <div className={`mt-4 grid gap-4 border-t pt-4 sm:grid-cols-2 ${t.sidebarDivider}`}>
-                          <Input t={t} label="Email address" type="email" value={c.email} onChange={(e) => setC(i, 'email', e.target.value)} placeholder="guest@example.com" autoComplete="off" />
-                          <Input t={t} label="Nationality" list="guest-nationalities" value={c.nationality} onChange={(e) => setC(i, 'nationality', e.target.value)} placeholder="e.g. Kenyan" autoComplete="off" />
-                          <Select t={t} label="ID document" value={c.id_type} onChange={(e) => setC(i, 'id_type', e.target.value as GuestIdType)}>
-                            {GUEST_ID_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                          </Select>
-                          <Input t={t} label="ID / passport number" value={c.id_number} onChange={(e) => setC(i, 'id_number', e.target.value)} placeholder="Document number" autoComplete="off" />
-                          <div className="sm:col-span-2">
-                            <Area t={t} label="Notes & special requests" value={c.notes} onChange={(e) => setC(i, 'notes', e.target.value)} placeholder="Allergies, late arrival, extra bed…" maxLength={500} />
+              <div key={i} className={`mt-2 overflow-hidden ${t.radius} ${t.chip}`}>
+                <div className="grid gap-4 p-3 sm:grid-cols-2">
+                  <p className="flex items-center gap-2 text-xs font-semibold sm:col-span-2">
+                    <span className={`grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-bold ${t.iconBox}`}>{i + 2}</span>
+                    Guest {i + 2}
+                  </p>
+                  <Input t={t} label="Full name" value={c.name} onChange={(e) => setC(i, 'name', e.target.value)} placeholder="e.g. John Mwangi" autoComplete="off" required />
+                  <PhoneInput t={t} label="Phone number" value={c.phone} onChange={(v) => setC(i, 'phone', v)} />
+                  <div className="sm:col-span-2">
+                    <button
+                      type="button" onClick={() => setC(i, 'more', !cMore)} aria-expanded={cMore}
+                      className={`flex items-center gap-1.5 text-xs font-semibold ${t.muted} transition hover:text-inherit`}
+                    >
+                      <ChevronDown className={`size-3.5 transition ${cMore ? 'rotate-180' : ''}`} />
+                      {cMore ? 'Hide extra details' : 'Add ID, email, nationality & requests'}
+                    </button>
+                    <AnimatePresence initial={false}>
+                      {cMore && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }}
+                          className="overflow-hidden"
+                        >
+                          <div className={`mt-4 grid gap-4 border-t pt-4 sm:grid-cols-2 ${t.sidebarDivider}`}>
+                            <Input t={t} label="Email address" type="email" value={c.email} onChange={(e) => setC(i, 'email', e.target.value)} placeholder="guest@example.com" autoComplete="off" />
+                            <Input t={t} label="Nationality" list="guest-nationalities" value={c.nationality} onChange={(e) => setC(i, 'nationality', e.target.value)} placeholder="e.g. Kenyan" autoComplete="off" />
+                            <Select t={t} label="ID document" value={c.id_type} onChange={(e) => setC(i, 'id_type', e.target.value as GuestIdType)}>
+                              {GUEST_ID_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                            </Select>
+                            <Input t={t} label="ID / passport number" value={c.id_number} onChange={(e) => setC(i, 'id_number', e.target.value)} placeholder="Document number" autoComplete="off" />
+                            <div className="sm:col-span-2">
+                              <Area t={t} label="Notes & special requests" value={c.notes} onChange={(e) => setC(i, 'notes', e.target.value)} placeholder="Allergies, late arrival, extra bed…" maxLength={500} />
+                            </div>
                           </div>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 </div>
+                {stayRow(i)}
               </div>
             )
           })}
           {errors.companions && <p className="mt-2 text-[11px] text-rose-500">{errors.companions}</p>}
         </Step>
 
-        <Step t={t} n={3} title="When, and which rooms?" text="Pick the dates first — availability follows them. Guests can share a room or take their own.">
-          <div className="grid gap-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Input
-                t={t} label={mode === 'reserve' ? 'Moving in — date & time' : 'Check-in — date & time'}
-                type="datetime-local" value={form.start} onChange={set('start')} error={errors.start} required
-              />
-              <Stepper t={t} label="Length of stay" value={days} min={1} max={365} onChange={(v) => put('days', String(v))} error={errors.days} suffix={days === 1 ? 'night' : 'nights'} />
-            </div>
-
-            <div className={`flex items-center gap-2 px-3 py-2 text-xs ${t.radius} ${t.chip}`}>
-              <Clock className={`size-3.5 shrink-0 ${t.muted}`} />
-              {end ? (
-                <span>{mode === 'reserve' ? 'Reserved until' : 'Checks out'} <b>{end.toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</b> · {days} {days === 1 ? 'night' : 'nights'}</span>
-              ) : (
-                <span className={t.muted}>Pick the {mode === 'reserve' ? 'move-in' : 'check-in'} date to see the end date.</span>
-              )}
-            </div>
-
-            <div className={`flex min-w-0 flex-col gap-1 border-t pt-4 ${t.sidebarDivider}`}>
-              <span className={`text-[11px] font-medium ${t.muted}`}>
-                {companions.length ? `Guest 1's room${form.guest_name.trim() ? ` · ${form.guest_name.trim()}` : ''}` : 'Room'}
-              </span>
-              {!rooms.length ? (
-                <p className={`px-3 py-2.5 text-xs ${t.radius} ${t.chip}`}>No rooms found for this branch yet.</p>
-              ) : (
-                <>
-                  <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Room type">
-                    {[{ value: '', label: 'All types' }, ...roomTypes].map((o) => (
-                      <button
-                        key={o.value} type="button" role="radio" aria-checked={roomType === o.value}
-                        onClick={() => setRoomType(o.value)}
-                        className={`h-8 px-3 text-xs font-semibold transition ${t.radius} ${roomType === o.value ? t.navActive : t.chip}`}
-                      >
-                        {o.label}
-                      </button>
-                    ))}
-                  </div>
-                  {!shownRooms.length ? (
-                    <p className={`mt-2 px-3 py-2.5 text-xs ${t.radius} ${t.chip}`}>No rooms in this category.</p>
-                  ) : (
-                    <div className="mt-2 grid max-h-64 gap-2 overflow-y-auto pr-1 sm:grid-cols-2" role="radiogroup" aria-label="Room">
-                      {shownRooms.map((r) => {
-                        const ok = usable(r)
-                        const sel = form.room === String(r.id)
-                        return (
-                          <button
-                            key={r.id} type="button" role="radio" aria-checked={sel} disabled={!ok}
-                            onClick={() => put('room', String(r.id))}
-                            className={`flex items-center gap-3 p-2.5 text-left transition disabled:cursor-not-allowed ${t.radius} ${
-                              sel ? t.navActive : ok ? `${t.chip} ${t.cardHover}` : `${t.chip} opacity-50`
-                            }`}
-                          >
-                            <span className={`grid size-12 shrink-0 place-items-center overflow-hidden ${t.radius} ${sel ? 'bg-white/15' : t.iconBox}`}>
-                              {r.photo ? <img src={r.photo} alt="" loading="lazy" className="size-full object-cover" /> : <BedDouble className="size-5" />}
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-semibold">{r.name}</span>
-                              <span className={`block truncate text-[11px] ${sel ? 'opacity-75' : t.muted}`}>
-                                {r.type_label} · {formatMoney(r.price)}/night · sleeps {r.capacity}
-                              </span>
-                              <span className={`mt-0.5 block truncate text-[10px] font-medium uppercase tracking-wide ${
-                                ok ? (sel ? 'opacity-80' : 'text-emerald-600 dark:text-emerald-400') : 'opacity-60'
-                              }`}>
-                                {ok ? 'Available' : r.status !== 'active' ? r.status_label : 'Booked for that period'}
-                              </span>
-                            </span>
-                            {sel && <Check className="size-4 shrink-0" />}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  )}
-                </>
-              )}
-              {errors.room && <span className="text-[11px] text-rose-500">{errors.room}</span>}
-              {!errors.room && chosen && !usable(chosen) && (
-                <span className="text-[11px] text-rose-500">{chosen.name} isn't free for that period — pick another room.</span>
-              )}
-            </div>
-
-            {companions.length > 0 && (
-              <div className={`space-y-2 border-t pt-4 ${t.sidebarDivider}`}>
-                <p className={`text-[11px] font-medium ${t.muted}`}>Where everyone else sleeps — leave empty to share the main room</p>
-                {companions.map((c, i) => {
-                  const { s: cs, e: ce } = cDates(c)
-                  const cBusy = busyFor(cs, ce)
-                  const cOk = (r: Room) => r.status === 'active' && !cBusy.has(r.id)
-                  return (
-                    <div key={i} className={`grid items-end gap-3 p-3 sm:grid-cols-[minmax(0,9rem)_1fr_1fr_auto] ${t.radius} ${t.chip}`}>
-                      <p className="flex items-center gap-2 pb-2 text-xs font-semibold">
-                        <span className={`grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-bold ${t.iconBox}`}>{i + 2}</span>
-                        <span className="truncate">{c.name.trim() || `Guest ${i + 2}`}</span>
-                      </p>
-                      <Select t={t} label="Room type" value={c.type} onChange={(e) => { setC(i, 'type', e.target.value); setC(i, 'room', '') }}>
-                        <option value="">Any type</option>
-                        {roomTypes.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </Select>
-                      <Select t={t} label="Room" value={c.room} onChange={(e) => setC(i, 'room', e.target.value)}>
-                        <option value="">Shares the main room{chosen ? ` (${chosen.name})` : ''}</option>
-                        {rooms.filter((r) => !c.type || r.room_type === c.type).map((r) => {
-                          const sharer = companions.findIndex((o, j) => j !== i && Number(o.room) === r.id)
-                          return (
-                            <option key={r.id} value={r.id} disabled={!cOk(r) || r.id === chosen?.id}>
-                              {r.name} · {formatMoney(r.price)}/night
-                              {r.id === chosen?.id ? ' — main room' : sharer >= 0 ? ` — shared with guest ${sharer + 2}` : !cOk(r) ? (r.status !== 'active' ? ` — ${r.status_label.toLowerCase()}` : ' — booked for that period') : ''}
-                            </option>
-                          )
-                        })}
-                      </Select>
-                      <button
-                        type="button" aria-pressed={c.ownDates} disabled={!c.room}
-                        title={!c.room ? 'Pick a room first' : 'Give this guest different dates'}
-                        onClick={() => { setC(i, 'ownDates', !c.ownDates); if (!c.ownDates) { setC(i, 'start', form.start); setC(i, 'days', form.days) } }}
-                        className={`h-10 whitespace-nowrap px-3 text-[11px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${t.radius} ${c.ownDates ? t.navActive : t.chip}`}
-                      >
-                        {c.ownDates ? 'Own dates' : 'Same dates'}
-                      </button>
-                      {c.ownDates && c.room && (
-                        <div className="grid gap-3 sm:col-span-4 sm:grid-cols-2">
-                          <Input t={t} label="Check-in — date & time" type="datetime-local" value={c.start} onChange={(e) => setC(i, 'start', e.target.value)} />
-                          <Stepper t={t} label="Length of stay" value={Math.max(1, parseInt(c.days, 10) || days)} min={1} max={365} onChange={(v) => setC(i, 'days', String(v))} suffix={Math.max(1, parseInt(c.days, 10) || days) === 1 ? 'night' : 'nights'} />
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        </Step>
-
-        <Step t={t} n={4} title={mode === 'reserve' ? 'Deposit & payments' : 'Payments'} text="Optional — record money received now: who paid, how much and how.">
+        <Step t={t} n={3} title={mode === 'reserve' ? 'Deposit & payments' : 'Payments'} text="Optional — record money received now: who paid, how much and how.">
           {mode === 'reserve' && (
             <div className="mb-4 grid gap-4 sm:grid-cols-2">
               <div className="flex min-w-0 flex-col gap-1">
@@ -961,6 +1059,7 @@ function RegisterForm({ t, rooms, bookings, onDone }: { t: WorkspaceTheme; rooms
           <p className={`mt-3 text-[11px] ${t.muted}`}>Still needed: {missing.join(', ')}</p>
         )}
       </Panel>
+      <AnimatePresence>{stayDialog()}</AnimatePresence>
     </form>
   )
 }
