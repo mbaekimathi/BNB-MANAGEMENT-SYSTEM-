@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Deploys the latest code from GitHub:
+#   git pull → backend packages → database migrations → static files
+#            → frontend packages → production build (frontend/dist)
+#
+# Usage:  bash deploy.sh
+set -euo pipefail
+cd "$(dirname "$0")"
+ROOT="$(pwd)"
+
+step() { printf '\n\033[1;33m==> %s\033[0m\n' "$1"; }
+fail() { printf '\n\033[1;31mERROR: %s\033[0m\n' "$1" >&2; exit 1; }
+hash_of() { sha256sum "$1" | cut -d' ' -f1; }
+
+step "Pulling latest code from GitHub"
+git pull --ff-only || fail "git pull failed — commit or stash local changes first."
+
+# --- Backend ---
+VENV_PY="$ROOT/backend/.venv/bin/python"
+[ -x "$VENV_PY" ] || VENV_PY="$ROOT/backend/.venv/Scripts/python.exe"   # Windows venv layout
+[ -x "$VENV_PY" ] || fail "No virtualenv at backend/.venv — run ./start.sh once to create it."
+
+step "Backend: Python packages"
+REQ_HASH="$(hash_of backend/requirements.txt)"
+STAMP="backend/.venv/.requirements.sha256"
+if [ ! -f "$STAMP" ] || [ "$(cat "$STAMP")" != "$REQ_HASH" ]; then
+  "$VENV_PY" -m pip install -r backend/requirements.txt
+  echo "$REQ_HASH" > "$STAMP"
+else
+  echo "Already up to date."
+fi
+
+step "Backend: database migrations"
+(cd backend && "$VENV_PY" manage.py migrate --noinput)
+
+step "Backend: static files"
+(cd backend && "$VENV_PY" manage.py collectstatic --noinput --clear)
+
+# --- Frontend ---
+step "Frontend: Node packages"
+command -v npm >/dev/null 2>&1 || fail "npm not found — install Node.js 22.12+ from https://nodejs.org/"
+LOCK_HASH="$(hash_of frontend/package-lock.json)"
+FSTAMP="frontend/node_modules/.lock.sha256"
+if [ ! -f "$FSTAMP" ] || [ "$(cat "$FSTAMP")" != "$LOCK_HASH" ]; then
+  (cd frontend && npm install)
+  echo "$LOCK_HASH" > "$FSTAMP"
+else
+  echo "Already up to date."
+fi
+
+step "Frontend: production build"
+(cd frontend && npm run build)
+
+printf '\n\033[1;32mDeployed.\033[0m Backend migrated + static collected, frontend built to frontend/dist.\n'
+echo "Restart your app server to pick up the changes (e.g. touch tmp/restart.txt on Passenger,"
+echo "or restart the Django/systemd service you're using)."
