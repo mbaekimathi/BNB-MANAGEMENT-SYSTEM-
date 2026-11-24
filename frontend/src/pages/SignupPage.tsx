@@ -107,14 +107,14 @@ export default function SignupPage() {
   return (
     <AuthLayout>
       <motion.div initial="hidden" animate="show">
-        <motion.p custom={0} variants={section} className="text-sm font-medium text-gold-300">
+        <motion.p custom={0} variants={section} className="text-sm font-medium text-gold-500 dark:text-gold-300">
           Join the team
         </motion.p>
-        <motion.h2 custom={1} variants={section} className="mt-2 font-display text-3xl font-medium tracking-tight text-white sm:text-4xl">
+        <motion.h2 custom={1} variants={section} className="mt-2 font-display text-3xl font-medium tracking-tight text-slate-900 sm:text-4xl dark:text-white">
           Create your account
         </motion.h2>
-        <motion.p custom={2} variants={section} className="mt-3 flex items-start gap-2 rounded-xl bg-white/[0.03] px-3 py-2 text-xs text-slate-400">
-          <Clock3 className="mt-0.5 size-3.5 shrink-0 text-gold-300" />
+        <motion.p custom={2} variants={section} className="mt-3 flex items-start gap-2 rounded-xl bg-slate-900/[0.04] px-3 py-2 text-xs text-slate-600 dark:bg-white/[0.03] dark:text-slate-400">
+          <Clock3 className="mt-0.5 size-3.5 shrink-0 text-gold-500 dark:text-gold-300" />
           New accounts join as Branch Employee and stay pending activation until a manager approves them.
         </motion.p>
 
@@ -143,16 +143,16 @@ export default function SignupPage() {
             <div>
               <Field label="Password" icon={LockKeyhole} type="password" autoComplete="new-password" value={form.password} onChange={text('password')} error={fields.password} />
               {!form.password && !fields.password && (
-                <p className="px-1 pt-1.5 text-[11px] text-slate-500">Use a 6-digit number or at least 8 characters.</p>
+                <p className="px-1 pt-1.5 text-[11px] text-slate-400 dark:text-slate-500">Use a 6-digit number or at least 8 characters.</p>
               )}
               {form.password && (
                 <div className="mt-2 flex items-center gap-3 px-1">
                   <div className="flex flex-1 gap-1.5">
                     {[0, 1, 2, 3].map((i) => (
-                      <span key={i} className={`h-1 flex-1 rounded-full transition-colors duration-300 ${i < score ? strength[score].color : 'bg-white/10'}`} />
+                      <span key={i} className={`h-1 flex-1 rounded-full transition-colors duration-300 ${i < score ? strength[score].color : 'bg-slate-200 dark:bg-white/10'}`} />
                     ))}
                   </div>
-                  <span className="w-20 text-right text-[11px] text-slate-400">{isPin(form.password) ? '6-digit PIN' : strength[score].label}</span>
+                  <span className="w-20 text-right text-[11px] text-slate-500 dark:text-slate-400">{isPin(form.password) ? '6-digit PIN' : strength[score].label}</span>
                 </div>
               )}
             </div>
@@ -172,9 +172,9 @@ export default function SignupPage() {
           </motion.div>
         </form>
 
-        <p className="mt-7 text-center text-sm text-slate-400">
+        <p className="mt-7 text-center text-sm text-slate-500 dark:text-slate-400">
           Already have an account?{' '}
-          <Link to="/login" className="font-medium text-gold-300 transition hover:text-gold-200">
+          <Link to="/login" className="font-medium text-gold-500 transition hover:text-gold-400 dark:text-gold-300 dark:hover:text-gold-200">
             Sign in
           </Link>
         </p>

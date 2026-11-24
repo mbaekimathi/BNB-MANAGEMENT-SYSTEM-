@@ -64,6 +64,10 @@ class User(AbstractUser):
     photo = models.ImageField("profile picture", upload_to=profile_photo_path, blank=True)
     role = models.CharField(max_length=30, choices=Role.choices, default=Role.BRANCH_EMPLOYEE)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    branch = models.ForeignKey(
+        "bnb.Branch", on_delete=models.SET_NULL, null=True, blank=True, related_name="employees",
+        help_text="The BnB branch this employee works at (branch roles only).",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

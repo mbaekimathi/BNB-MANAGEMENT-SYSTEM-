@@ -22,6 +22,11 @@ export const ROLE_LABELS: Record<Role, string> = {
   branch_employee: 'Branch Employee',
 }
 
+/** Roles that work at a single BnB branch (rather than company-wide). */
+export const BRANCH_ROLES: Role[] = ['branch_manager', 'branch_receptionist', 'branch_store_manager', 'branch_employee']
+
+export const isBranchRole = (role: Role) => BRANCH_ROLES.includes(role)
+
 export const rolePath = (role: Role) => `/${ROLE_SLUGS[role]}`
 
 export const roleFromSlug = (slug: string | undefined) =>

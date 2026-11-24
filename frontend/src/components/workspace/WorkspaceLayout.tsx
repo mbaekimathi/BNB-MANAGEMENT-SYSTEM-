@@ -1,7 +1,9 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { LogOut, Menu, MoreHorizontal, X } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { ArrowLeft, ChevronDown, LogOut, Menu, MoreHorizontal, UserCircle, X } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { useTheme } from '../../context/ThemeContext'
+import { ThemeToggle } from '../ThemeToggle'
 import type { Employee } from '../../lib/api'
 import { useNow } from '../../lib/time'
 import type { NavItem, Workspace } from '../../lib/workspaces'
@@ -12,6 +14,8 @@ interface Props {
   user: Employee
   basePath: string
   active: NavItem
+  /** Set when inside a section that has its own sub-pages. */
+  module?: NavItem
   onLogout: () => void
   children: ReactNode
 }
@@ -37,8 +41,9 @@ function BrandMark({ workspace, basePath, compact }: { workspace: Workspace; bas
   )
 }
 
-function NavLinks({ workspace, basePath, active, rail, onNavigate }: {
+function NavLinks({ workspace, items, basePath, active, rail, onNavigate }: {
   workspace: Workspace
+  items: NavItem[]
   basePath: string
   active: NavItem
   rail?: boolean
@@ -47,11 +52,11 @@ function NavLinks({ workspace, basePath, active, rail, onNavigate }: {
   const t = workspace.theme
   return (
     <nav className="flex flex-col gap-1.5">
-      {workspace.nav.map((item, i) => {
+      {items.map((item, i) => {
         const isActive = item.slug === active.slug
         return (
           <motion.div
-            key={item.slug}
+            key={`${basePath}/${item.slug}`}
             initial={{ opacity: 0, x: -12 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.05 + i * 0.04, duration: 0.35 }}
@@ -79,24 +84,171 @@ function NavLinks({ workspace, basePath, active, rail, onNavigate }: {
   )
 }
 
-function SidebarUser({ workspace, user, onLogout, rail }: { workspace: Workspace; user: Employee; onLogout: () => void; rail?: boolean }) {
+function SideNav({ workspace, user, basePath, active, module, rail, onNavigate }: {
+  workspace: Workspace
+  user: Employee
+  basePath: string
+  active: NavItem
+  module?: NavItem
+  rail?: boolean
+  onNavigate?: () => void
+}) {
   const t = workspace.theme
+  const items = module?.children ?? workspace.nav
+  const base = module ? `${basePath}/${module.slug}` : basePath
+  return (
+    <>
+      {module && (
+        <Link
+          to={basePath}
+          onClick={onNavigate}
+          aria-label="Back to dashboard"
+          className={`group relative mb-4 flex items-center gap-2 px-3 py-2 text-xs font-medium transition ${t.radius} ${t.navIdle} ${
+            rail ? 'md:max-lg:justify-center md:max-lg:px-0' : ''
+          }`}
+        >
+          <ArrowLeft className="size-4 shrink-0 transition-transform group-hover:-translate-x-0.5" />
+          <span className={rail ? 'md:max-lg:hidden' : ''}>Back to dashboard</span>
+        </Link>
+      )}
+      <p className={`mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.2em] ${rail ? 'md:max-lg:hidden' : ''} ${t.sidebarMuted}`}>
+        {module?.label ?? user.role_label}
+      </p>
+      <NavLinks workspace={workspace} items={items} basePath={base} active={active} rail={rail} onNavigate={onNavigate} />
+    </>
+  )
+}
+
+function SidebarUser({ workspace, user, basePath, active, rail, onNavigate }: {
+  workspace: Workspace
+  user: Employee
+  basePath: string
+  active: NavItem
+  rail?: boolean
+  onNavigate?: () => void
+}) {
+  const t = workspace.theme
+  const links = workspace.accountNav
+  const row = `group relative flex w-full items-center gap-3 px-3 py-2.5 text-sm transition-all duration-200 ${t.radius} ${
+    rail ? 'md:max-lg:justify-center md:max-lg:px-0' : ''
+  }`
+  const tip = (label: string) =>
+    rail && (
+      <span className="pointer-events-none absolute left-full z-50 ml-3 hidden whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 font-sans text-xs font-medium text-white shadow-xl md:max-lg:group-hover:block">
+        {label}
+      </span>
+    )
   return (
     <div className={`border-t pt-4 ${t.sidebarDivider}`}>
       <div className={`flex items-center gap-3 ${rail ? 'md:max-lg:flex-col' : ''}`}>
         <Avatar user={user} className="size-10 rounded-full" ring={t.ring} />
         <div className={`min-w-0 flex-1 ${rail ? 'md:max-lg:hidden' : ''}`}>
-          <p className="truncate text-sm font-medium">{user.full_name}</p>
-          <p className={`truncate text-xs ${t.sidebarMuted}`}>Code {user.code}</p>
+          <p className="truncate text-sm font-medium capitalize">{user.first_name}</p>
+          <p className={`truncate text-xs ${t.sidebarMuted}`}>{user.role_label}</p>
         </div>
-        <button
-          onClick={onLogout}
-          title="Sign out"
-          className={`grid size-9 shrink-0 place-items-center rounded-lg transition ${t.navIdle}`}
-        >
-          <LogOut className="size-4" />
-        </button>
       </div>
+      {links && (
+        <nav className="mt-3 flex flex-col gap-1">
+          {links.map((item) => {
+            const isActive = item.slug === active.slug
+            return (
+              <Link
+                key={item.slug}
+                to={href(basePath, item)}
+                onClick={onNavigate}
+                aria-current={isActive ? 'page' : undefined}
+                aria-label={item.label}
+                className={`${row} ${isActive ? t.navActive : t.navIdle}`}
+              >
+                <item.icon className="size-[18px] shrink-0" />
+                <span className={rail ? 'md:max-lg:hidden' : ''}>{item.label}</span>
+                {tip(item.label)}
+              </Link>
+            )
+          })}
+        </nav>
+      )}
+    </div>
+  )
+}
+
+function UserMenu({ workspace, user, basePath, onLogout }: {
+  workspace: Workspace
+  user: Employee
+  basePath: string
+  onLogout: () => void
+}) {
+  const t = workspace.theme
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: PointerEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    document.addEventListener('pointerdown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const item = `flex w-full items-center gap-3 px-3 py-2.5 text-sm ${t.radius}`
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={`flex items-center gap-3 rounded-2xl p-1 pr-1.5 transition ${t.iconButton}`}
+      >
+        <span className="hidden text-right lg:block">
+          <span className="block text-sm font-medium leading-tight">{user.full_name}</span>
+          <span className={`block text-xs ${t.muted}`}>{user.email}</span>
+        </span>
+        <Avatar user={user} className="size-10 rounded-full" ring={t.ring} />
+        <ChevronDown className={`size-4 transition-transform duration-200 ${open ? 'rotate-180' : ''} ${t.muted}`} />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            role="menu"
+            initial={{ opacity: 0, y: -6, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6, scale: 0.97 }}
+            transition={{ duration: 0.18 }}
+            className={`absolute right-0 top-full z-50 mt-2 w-64 origin-top-right overflow-hidden p-1.5 ${t.radius} ${t.card} shadow-xl shadow-black/10 dark:shadow-black/40`}
+          >
+            <div className="px-3 py-2.5">
+              <p className="truncate text-sm font-medium">{user.full_name}</p>
+              <p className={`truncate text-xs ${t.muted}`}>{user.email}</p>
+              <span className={`mt-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${t.badge}`}>
+                {user.role_label}
+              </span>
+            </div>
+            <div className={`my-1 border-t ${t.sidebarDivider}`} />
+            <Link role="menuitem" to={`${basePath}/profile`} onClick={() => setOpen(false)} className={`${item} ${t.navIdle}`}>
+              <UserCircle className="size-[18px] shrink-0" /> My profile
+            </Link>
+            <button
+              role="menuitem"
+              type="button"
+              onClick={() => {
+                setOpen(false)
+                void onLogout()
+              }}
+              className={`${item} ${t.navIdle} hover:!text-rose-500`}
+            >
+              <LogOut className="size-[18px] shrink-0" /> Sign out
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -117,20 +269,27 @@ function HeaderClock({ className }: { className: string }) {
   )
 }
 
-export function WorkspaceLayout({ workspace, user, basePath, active, onLogout, children }: Props) {
+export function WorkspaceLayout({ workspace, user, basePath, active, module, onLogout, children }: Props) {
   const t = workspace.theme
+  const { resolved } = useTheme()
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const bottomItems = workspace.nav.slice(0, 4)
+  const bottomItems = (module?.children ?? workspace.nav).slice(0, 4)
+  const navBase = module ? `${basePath}/${module.slug}` : basePath
 
   useEffect(() => {
     if (!drawerOpen) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setDrawerOpen(false)
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    const { overflow } = document.body.style
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = overflow
+    }
   }, [drawerOpen])
 
   return (
-    <div className={`relative min-h-dvh ${t.root}`} style={{ colorScheme: t.mode }}>
+    <div className={`relative min-h-dvh ${t.root}`} style={{ colorScheme: resolved }}>
       <div aria-hidden className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className={`absolute -right-[10%] -top-[20%] size-[55vmax] animate-aurora rounded-full blur-3xl ${t.glowA}`} />
         <div className={`absolute -bottom-[25%] -left-[10%] size-[55vmax] animate-aurora rounded-full blur-3xl [animation-delay:-8s] ${t.glowB}`} />
@@ -148,12 +307,9 @@ export function WorkspaceLayout({ workspace, user, basePath, active, onLogout, c
           <BrandMark workspace={workspace} basePath={basePath} compact />
         </div>
         <div className="flex-1 overflow-y-auto overflow-x-visible">
-          <p className={`mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.2em] md:max-lg:hidden ${t.sidebarMuted}`}>
-            {user.role_label}
-          </p>
-          <NavLinks workspace={workspace} basePath={basePath} active={active} rail />
+          <SideNav workspace={workspace} user={user} basePath={basePath} active={active} module={module} rail />
         </div>
-        <SidebarUser workspace={workspace} user={user} onLogout={onLogout} rail />
+        <SidebarUser workspace={workspace} user={user} basePath={basePath} active={active} rail />
       </motion.aside>
 
       {/* Mobile slide-out menu */}
@@ -183,10 +339,9 @@ export function WorkspaceLayout({ workspace, user, basePath, active, onLogout, c
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto">
-                <p className={`mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.2em] ${t.sidebarMuted}`}>{user.role_label}</p>
-                <NavLinks workspace={workspace} basePath={basePath} active={active} onNavigate={() => setDrawerOpen(false)} />
+                <SideNav workspace={workspace} user={user} basePath={basePath} active={active} module={module} onNavigate={() => setDrawerOpen(false)} />
               </div>
-              <SidebarUser workspace={workspace} user={user} onLogout={onLogout} />
+              <SidebarUser workspace={workspace} user={user} basePath={basePath} active={active} onNavigate={() => setDrawerOpen(false)} />
             </motion.aside>
           </>
         )}
@@ -203,24 +358,19 @@ export function WorkspaceLayout({ workspace, user, basePath, active, onLogout, c
               <Menu className="size-5" />
             </button>
             <div className="min-w-0 flex-1">
-              <p className={`truncate text-[11px] font-medium uppercase tracking-[0.18em] ${t.accentText}`}>{user.role_label}</p>
+              <p className={`truncate text-[11px] font-medium uppercase tracking-[0.18em] ${t.accentText}`}>{module ? `${user.role_label} · ${module.label}` : user.role_label}</p>
               <h1 className={`truncate text-lg leading-tight sm:text-xl ${t.heading}`}>{active.label}</h1>
             </div>
             <HeaderClock className={t.muted} />
-            <div className="flex items-center gap-3">
-              <div className="hidden text-right lg:block">
-                <p className="text-sm font-medium leading-tight">{user.full_name}</p>
-                <p className={`text-xs ${t.muted}`}>{user.email}</p>
-              </div>
-              <Avatar user={user} className="size-10 rounded-full" ring={t.ring} />
-            </div>
+            <ThemeToggle className={t.iconButton} />
+            <UserMenu workspace={workspace} user={user} basePath={basePath} onLogout={onLogout} />
           </div>
         </header>
 
         <main className="flex-1 px-4 pb-28 pt-6 sm:px-6 md:pb-10 lg:px-8">
           <AnimatePresence mode="wait">
             <motion.div
-              key={active.slug}
+              key={`${module?.slug ?? ''}/${active.slug}`}
               initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
@@ -236,7 +386,7 @@ export function WorkspaceLayout({ workspace, user, basePath, active, onLogout, c
           <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 px-4 py-4 text-xs sm:flex-row sm:px-6 lg:px-8">
             <p>© {YEAR} Haven Stays · {user.role_label} workspace</p>
             <p className="flex items-center gap-2">
-              <span className="size-1.5 rounded-full bg-emerald-500" /> Signed in as {user.code}
+              <span className="size-1.5 rounded-full bg-emerald-500" /> Signed in as <span className="capitalize">{user.first_name}</span>
             </p>
           </div>
         </footer>
@@ -250,7 +400,7 @@ export function WorkspaceLayout({ workspace, user, basePath, active, onLogout, c
             return (
               <Link
                 key={item.slug}
-                to={href(basePath, item)}
+                to={href(navBase, item)}
                 className={`relative flex min-w-0 flex-1 flex-col items-center gap-1 py-1 text-[10px] font-medium transition ${isActive ? t.bottomActive : t.bottomIdle}`}
               >
                 {isActive && (

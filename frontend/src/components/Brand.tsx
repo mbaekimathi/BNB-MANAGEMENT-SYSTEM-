@@ -9,7 +9,7 @@ export function Brand({ className = '' }: { className?: string }) {
         </svg>
       </span>
       <span className="leading-tight">
-        <span className="block font-display text-xl font-semibold tracking-tight text-white">Haven Stays</span>
+        <span className="block font-display text-xl font-semibold tracking-tight text-slate-900 dark:text-white">Haven Stays</span>
         <span className="block text-[11px] font-medium uppercase tracking-[0.28em] text-gold-300/80">BnB Suite</span>
       </span>
     </Link>

@@ -16,13 +16,16 @@ class UserSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(source="get_full_name", read_only=True)
     role_label = serializers.CharField(source="get_role_display", read_only=True)
     status_label = serializers.CharField(source="get_status_display", read_only=True)
+    branch_name = serializers.CharField(source="branch.name", read_only=True, default=None)
+    branch_detail = serializers.SerializerMethodField()
     photo = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
             "id", "code", "email", "first_name", "last_name", "full_name", "phone", "photo",
-            "role", "role_label", "status", "status_label", "last_login", "created_at",
+            "role", "role_label", "status", "status_label", "branch", "branch_name", "branch_detail",
+            "last_login", "created_at",
         ]
         read_only_fields = fields
 
@@ -30,6 +33,20 @@ class UserSerializer(serializers.ModelSerializer):
         if not obj.photo:
             return None
         return obj.photo.url
+
+    def get_branch_detail(self, obj):
+        if not obj.branch_id:
+            return None
+        b = obj.branch
+        return {
+            "id": b.id,
+            "name": b.name,
+            "code": b.code,
+            "location": b.location,
+            "phone": b.phone,
+            "email": b.email,
+            "photo": b.photo.url if b.photo else None,
+        }
 
 
 class RegisterSerializer(serializers.ModelSerializer):

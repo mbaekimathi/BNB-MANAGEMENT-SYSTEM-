@@ -10,6 +10,16 @@ export type Role =
   | 'branch_receptionist'
   | 'branch_employee'
 
+export interface BranchInfo {
+  id: number
+  name: string
+  code: string
+  location: string
+  phone: string
+  email: string
+  photo: string | null
+}
+
 export interface Employee {
   id: number
   code: string
@@ -23,6 +33,9 @@ export interface Employee {
   role_label: string
   status: 'pending' | 'active' | 'suspended'
   status_label: string
+  branch: number | null
+  branch_name: string | null
+  branch_detail: BranchInfo | null
   last_login: string | null
   created_at: string
 }
@@ -126,7 +139,7 @@ export function parseApiError(err: unknown): { message: string; fields: FieldErr
       for (const [key, value] of Object.entries(data)) {
         const text = Array.isArray(value) ? String(value[0]) : String(value)
         if (key === 'detail' || key === 'non_field_errors') message = text
-        else if (key !== 'code') fields[key] = text
+        else if (key !== 'code' || Array.isArray(value)) fields[key] = text
       }
     }
     return { message: message || (Object.keys(fields).length ? 'Please fix the highlighted fields.' : 'Something went wrong. Please try again.'), fields }

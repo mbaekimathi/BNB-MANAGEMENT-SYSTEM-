@@ -4,6 +4,7 @@ import { AnimatedBackdrop } from './AnimatedBackdrop'
 import { Brand } from './Brand'
 import { LiveClock } from './LiveClock'
 import { Showcase } from './Showcase'
+import { ThemeToggle } from './ThemeToggle'
 
 const YEAR = new Date().getFullYear()
 
@@ -12,7 +13,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
     <div className="relative min-h-full">
       <AnimatedBackdrop />
       <div className="mx-auto grid min-h-screen max-w-[1440px] lg:grid-cols-[1.1fr_1fr]">
-        <aside className="relative hidden border-r border-white/5 lg:block">
+        <aside className="relative hidden border-r border-slate-900/10 lg:block dark:border-white/5">
           <div className="sticky top-0 h-screen">
             <div className="absolute left-10 top-10 z-10 xl:left-14">
               <Brand />
@@ -24,8 +25,10 @@ export function AuthLayout({ children }: { children: ReactNode }) {
         </aside>
 
         <main className="flex min-h-screen flex-col px-5 py-6 sm:px-10 lg:px-14">
-          <header className="flex items-center justify-between lg:hidden">
-            <Brand />
+          <header className="flex items-center justify-between">
+            <span className="lg:hidden"><Brand /></span>
+            <span className="hidden lg:block" />
+            <ThemeToggle />
           </header>
           <div className="mt-4 lg:hidden">
             <LiveClock />
@@ -40,7 +43,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
               {children}
             </motion.div>
           </div>
-          <footer className="text-center text-xs text-slate-500">
+          <footer className="text-center text-xs text-slate-400 dark:text-slate-500">
             © {YEAR} Haven Stays · Secure employee access
           </footer>
         </main>

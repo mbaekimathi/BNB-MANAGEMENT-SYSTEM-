@@ -1,29 +1,10 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { Camera, ImagePlus, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { shrinkPhoto as shrink } from '../lib/image'
 
 const MAX_BYTES = 3 * 1024 * 1024
-const MAX_SIDE = 1024
 const TYPES = ['image/jpeg', 'image/png', 'image/webp']
-
-/** Shrinks big photos (e.g. straight from a phone camera) to at most 1024px, saved as JPEG. */
-async function shrink(file: File): Promise<File> {
-  const bitmap = await createImageBitmap(file)
-  const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height))
-  if (scale === 1 && file.size <= 1024 * 1024) return file
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.round(bitmap.width * scale)
-  canvas.height = Math.round(bitmap.height * scale)
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return file
-  ctx.fillStyle = '#fff'
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
-  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-  bitmap.close()
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85))
-  if (!blob) return file
-  return new File([blob], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' })
-}
 
 interface PhotoUploadProps {
   file: File | null
@@ -71,13 +52,13 @@ export function PhotoUpload({ file, onChange, error, onError }: PhotoUploadProps
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
         className={`flex items-center gap-4 rounded-2xl border border-dashed p-3 transition ${
-          error ? 'border-rose-400/60' : dragging ? 'border-gold-400/80 bg-gold-400/5' : 'border-white/15 hover:border-white/25'
+          error ? 'border-rose-400/60' : dragging ? 'border-gold-400/80 bg-gold-400/5' : 'border-slate-300 hover:border-slate-400 dark:border-white/15 dark:hover:border-white/25'
         }`}
       >
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          className="group relative size-16 shrink-0 overflow-hidden rounded-full border border-white/10 bg-white/[0.04]"
+          className="group relative size-16 shrink-0 overflow-hidden rounded-full border border-slate-300 bg-slate-900/[0.03] dark:border-white/10 dark:bg-white/[0.04]"
           aria-label="Choose profile picture"
         >
           <AnimatePresence mode="wait">
@@ -102,18 +83,18 @@ export function PhotoUpload({ file, onChange, error, onError }: PhotoUploadProps
           </span>
         </button>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-white">{file ? 'Profile picture added' : (
+          <p className="text-sm font-medium text-slate-900 dark:text-white">{file ? 'Profile picture added' : (
             <>
-              Upload a profile picture <span className="font-normal text-slate-500">(optional)</span>
+              Upload a profile picture <span className="font-normal text-slate-400 dark:text-slate-500">(optional)</span>
             </>
           )}</p>
-          <p className="truncate text-xs text-slate-400">{file ? file.name : 'Drag it here or tap the circle · JPG, PNG or WebP'}</p>
+          <p className="truncate text-xs text-slate-500 dark:text-slate-400">{file ? file.name : 'Drag it here or tap the circle · JPG, PNG or WebP'}</p>
         </div>
         {file && (
           <button
             type="button"
             onClick={() => onChange(null)}
-            className="grid size-9 shrink-0 place-items-center rounded-xl text-slate-400 transition hover:bg-white/5 hover:text-white"
+            className="grid size-9 shrink-0 place-items-center rounded-xl text-slate-400 transition hover:bg-slate-900/5 hover:text-slate-900 dark:hover:bg-white/5 dark:hover:text-white"
             aria-label="Remove picture"
           >
             <X className="size-4" />
@@ -130,7 +111,7 @@ export function PhotoUpload({ file, onChange, error, onError }: PhotoUploadProps
           }}
         />
       </div>
-      {error && <p className="pl-2 pt-1.5 text-xs text-rose-300">{error}</p>}
+      {error && <p className="pl-2 pt-1.5 text-xs text-rose-500 dark:text-rose-300">{error}</p>}
     </div>
   )
 }

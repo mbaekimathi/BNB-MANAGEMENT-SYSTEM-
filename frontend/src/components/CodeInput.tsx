@@ -58,7 +58,7 @@ export function CodeInput({ value, onChange, label, error, autoFocus, length = 6
 
   return (
     <div>
-      <p className="mb-2 pl-1 text-xs font-medium uppercase tracking-wider text-slate-400">{label}</p>
+      <p className="mb-2 pl-1 text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">{label}</p>
       <div className="flex justify-between gap-2 sm:gap-2.5" role="group" aria-label={label}>
         {digits.map((d, i) => (
           <motion.input
@@ -79,12 +79,12 @@ export function CodeInput({ value, onChange, label, error, autoFocus, length = 6
             aria-invalid={Boolean(error)}
             animate={d ? { scale: [1, 1.08, 1] } : { scale: 1 }}
             transition={{ duration: 0.2 }}
-            className={`h-14 w-full min-w-0 rounded-2xl border bg-white/[0.03] text-center text-xl font-semibold tabular-nums text-white outline-none transition-all duration-200 focus:bg-white/[0.06] focus:shadow-[0_0_0_4px_rgba(233,185,100,0.12)] sm:h-16 sm:text-2xl ${
+            className={`h-14 w-full min-w-0 rounded-2xl border bg-slate-900/[0.03] text-center text-xl font-semibold tabular-nums text-slate-900 outline-none transition-all duration-200 focus:bg-white focus:shadow-[0_0_0_4px_rgba(233,185,100,0.18)] sm:h-16 sm:text-2xl dark:bg-white/[0.03] dark:text-white dark:focus:bg-white/[0.06] dark:focus:shadow-[0_0_0_4px_rgba(233,185,100,0.12)] ${
               error
                 ? 'border-rose-400/60'
                 : d
                   ? 'border-gold-400/50 focus:border-gold-400/80'
-                  : 'border-white/10 hover:border-white/20 focus:border-gold-400/70'
+                  : 'border-slate-300 hover:border-slate-400 focus:border-gold-400/70 dark:border-white/10 dark:hover:border-white/20'
             }`}
           />
         ))}
@@ -95,7 +95,7 @@ export function CodeInput({ value, onChange, label, error, autoFocus, length = 6
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden pl-2 pt-1.5 text-xs text-rose-300"
+            className="overflow-hidden pl-2 pt-1.5 text-xs text-rose-500 dark:text-rose-300"
           >
             {error}
           </motion.p>

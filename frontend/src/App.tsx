@@ -3,6 +3,7 @@ import { lazy, Suspense } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { FullScreenLoader, GuestRoute, RoleRoute } from './components/ProtectedRoute'
 import { AuthProvider } from './context/AuthContext'
+import { ThemeProvider } from './context/ThemeContext'
 import LoginPage from './pages/LoginPage'
 
 const SignupPage = lazy(() => import('./pages/SignupPage'))
@@ -28,9 +29,11 @@ function AnimatedRoutes() {
 export default function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <AnimatedRoutes />
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <AnimatedRoutes />
+        </AuthProvider>
+      </ThemeProvider>
     </BrowserRouter>
   )
 }

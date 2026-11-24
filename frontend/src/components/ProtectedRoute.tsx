@@ -6,8 +6,8 @@ import { roleFromSlug, rolePath } from '../lib/roles'
 
 export function FullScreenLoader() {
   return (
-    <div className="grid min-h-screen place-items-center bg-ink-950">
-      <Loader2 className="size-8 animate-spin text-gold-300" />
+    <div className="grid min-h-screen place-items-center bg-[#f5f2ec] dark:bg-ink-950">
+      <Loader2 className="size-8 animate-spin text-gold-500 dark:text-gold-300" />
     </div>
   )
 }

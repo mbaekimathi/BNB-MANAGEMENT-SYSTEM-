@@ -15,8 +15,8 @@ export function Alert({ message, tone = 'error' }: { message?: string; tone?: 'e
           transition={{ duration: 0.4 }}
           className={`flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm ${
             tone === 'error'
-              ? 'border-rose-400/30 bg-rose-500/10 text-rose-100'
-              : 'border-emerald-400/30 bg-emerald-500/10 text-emerald-100'
+              ? 'border-rose-400/30 bg-rose-500/10 text-rose-700 dark:text-rose-100'
+              : 'border-emerald-400/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-100'
           }`}
         >
           <Icon className="mt-0.5 size-4 shrink-0" />
