@@ -325,23 +325,35 @@ const emptyCompanion = (): Companion => ({
   more: false,
 })
 
-/** One payment row — `guest` is the party position: '0' = main guest, 'n' = companion n-1. */
-type PayRow = { guest: string; amount: string; method: PaymentMethod; reference: string }
-const emptyPayment = (): PayRow => ({ guest: '0', amount: '', method: 'mpesa', reference: '' })
+/** One payment row — `guest` is the party position: '0' = main guest, 'n' = companion n-1.
+ *  `id` is a stable key so rows animate in and out cleanly. */
+type PayRow = { id: number; guest: string; amount: string; method: PaymentMethod; reference: string }
+let paySeq = 0
+const emptyPayment = (): PayRow => ({ id: ++paySeq, guest: '0', amount: '', method: 'mpesa', reference: '' })
 
-/** Numbered form section — the steps make the form read top-to-bottom. */
-function Step({ t, n, title, text, children }: { t: WorkspaceTheme; n: number; title: string; text?: string; children: ReactNode }) {
+/** Numbered form section — the steps make the form read top-to-bottom. `done` flips
+ *  the badge to a green tick so progress is visible at a glance. */
+function Step({ t, n, title, text, done, children }: { t: WorkspaceTheme; n: number; title: string; text?: string; done?: boolean; children: ReactNode }) {
   return (
-    <Panel t={t}>
-      <div className="mb-4 flex items-center gap-3">
-        <span className={`grid size-7 shrink-0 place-items-center text-xs font-bold ${t.radius} ${t.iconBox}`}>{n}</span>
-        <div className="min-w-0">
-          <h3 className={`text-sm ${t.heading}`}>{title}</h3>
-          {text && <p className={`mt-0.5 text-[11px] ${t.muted}`}>{text}</p>}
+    <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: n * 0.08, ease: 'easeOut' }}>
+      <Panel t={t}>
+        <div className="mb-4 flex items-center gap-3">
+          <motion.span
+            key={done ? 'done' : 'todo'}
+            initial={{ scale: 0.5, rotate: done ? -30 : 0 }} animate={{ scale: 1, rotate: 0 }}
+            transition={{ type: 'spring', stiffness: 500, damping: 22 }}
+            className={`grid size-7 shrink-0 place-items-center text-xs font-bold ${t.radius} ${done ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/30' : t.iconBox}`}
+          >
+            {done ? <Check className="size-4" /> : n}
+          </motion.span>
+          <div className="min-w-0">
+            <h3 className={`text-sm ${t.heading}`}>{title}</h3>
+            {text && <p className={`mt-0.5 text-[11px] ${t.muted}`}>{text}</p>}
+          </div>
         </div>
-      </div>
-      {children}
-    </Panel>
+        {children}
+      </Panel>
+    </motion.div>
   )
 }
 
@@ -507,6 +519,7 @@ function RegisterForm({ t, rooms, bookings, onDone }: { t: WorkspaceTheme; rooms
     !chosen && 'room',
     companions.some((c) => !c.name.trim()) && 'each guest\'s name',
   ].filter(Boolean)
+  const stayDone = !!(form.guest_name.trim() && form.guest_phone.trim() && chosen && companions.every((c) => c.name.trim()))
 
   async function save(e: FormEvent) {
     e.preventDefault()
@@ -586,7 +599,11 @@ function RegisterForm({ t, rooms, bookings, onDone }: { t: WorkspaceTheme; rooms
           <span className="block text-sm font-semibold">{title}</span>
           <span className={`block truncate text-[11px] ${sel ? 'opacity-75' : t.muted}`}>{text}</span>
         </span>
-        {sel && <Check className="ml-auto size-4 shrink-0" />}
+        {sel && (
+          <motion.span initial={{ scale: 0.4, rotate: -45 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: 'spring', stiffness: 500, damping: 20 }} className="ml-auto shrink-0">
+            <Check className="size-4" />
+          </motion.span>
+        )}
       </button>
     )
   }
@@ -631,9 +648,11 @@ function RegisterForm({ t, rooms, bookings, onDone }: { t: WorkspaceTheme; rooms
               const selR = sel === String(r.id)
               const extra = note?.(r)
               return (
-                <button
+                <motion.button
+                  layout
                   key={r.id} type="button" role="radio" aria-checked={selR} disabled={!free && !selR}
                   onClick={() => pick(String(r.id))}
+                  whileHover={free ? { scale: 1.015 } : undefined} whileTap={free ? { scale: 0.98 } : undefined}
                   className={`flex items-center gap-3 p-2.5 text-left transition disabled:cursor-not-allowed ${t.radius} ${
                     selR ? t.navActive : free ? `${t.chip} ${t.cardHover}` : `${t.chip} opacity-50`
                   }`}
@@ -652,8 +671,12 @@ function RegisterForm({ t, rooms, bookings, onDone }: { t: WorkspaceTheme; rooms
                       {free ? `Available${extra ? ` · ${extra}` : ''}` : extra ?? (r.status !== 'active' ? r.status_label : 'Booked for that period')}
                     </span>
                   </span>
-                  {selR && <Check className="size-4 shrink-0" />}
-                </button>
+                  {selR && (
+                    <motion.span initial={{ scale: 0.4, rotate: -45 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: 'spring', stiffness: 500, damping: 20 }} className="shrink-0">
+                      <Check className="size-4" />
+                    </motion.span>
+                  )}
+                </motion.button>
               )
             })}
           </div>
@@ -675,18 +698,26 @@ function RegisterForm({ t, rooms, bookings, onDone }: { t: WorkspaceTheme; rooms
           type="button" onClick={() => setEditing(k)}
           className={`flex w-full items-center gap-3 border-t px-3 py-2.5 text-left transition hover:brightness-[0.98] dark:hover:brightness-110 ${t.sidebarDivider}`}
         >
-          <span className={`grid size-8 shrink-0 place-items-center ${t.radius} ${room ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : t.iconBox}`}>
-            <BedDouble className="size-4" />
+          <span className={`relative grid size-8 shrink-0 place-items-center ${t.radius} ${
+            room ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : main ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' : t.iconBox
+          }`}>
+            {room || main ? <BedDouble className="size-4" /> : <Users className="size-4" />}
+            {main && !room && (
+              <span className="absolute -right-0.5 -top-0.5 flex size-2.5">
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-amber-400 opacity-75" />
+                <span className="relative inline-flex size-2.5 rounded-full bg-amber-500" />
+              </span>
+            )}
           </span>
           <span className="min-w-0 flex-1">
-            <span className={`block truncate text-xs ${room ? 'font-semibold' : `font-medium ${t.muted}`}`}>
+            <span className={`block truncate text-xs ${room ? 'font-semibold' : main ? 'font-semibold text-amber-600 dark:text-amber-400' : `font-medium ${t.muted}`}`}>
               {room ? `${room.name} · ${room.type_label}` : main ? 'Pick their room & dates' : `Shares ${chosen ? chosen.name : 'the main room'}`}
             </span>
             <span className={`block truncate text-[10px] ${t.muted}`}>
               {s && e ? `${dFmt(s)} → ${dFmt(e)} · ${d} ${d === 1 ? 'night' : 'nights'}` : 'Dates not set yet'}
             </span>
           </span>
-          <span className={`flex shrink-0 items-center gap-1 text-[11px] font-semibold ${t.muted}`}>
+          <span className={`flex shrink-0 items-center gap-1 text-[11px] font-semibold ${room || !main ? t.muted : 'text-amber-600 dark:text-amber-400'}`}>
             <CalendarClock className="size-3.5" />{room || !main ? 'Change' : 'Allocate'}
           </span>
         </button>
@@ -831,14 +862,14 @@ function RegisterForm({ t, rooms, bookings, onDone }: { t: WorkspaceTheme; rooms
   return (
     <form onSubmit={save} className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <div className="space-y-5">
-        <Step t={t} n={1} title="What are you doing?" text={mode === 'reserve' ? 'The room is held for the client\'s period.' : 'The room is marked occupied right away.'}>
+        <Step t={t} n={1} done title="What are you doing?" text={mode === 'reserve' ? 'The room is held for the client\'s period.' : 'The room is marked occupied right away.'}>
           <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Booking type">
             {modeCard('reserve', CalendarCheck, 'Reserve a room', 'Hold it for a future date')}
             {modeCard('stay', BedDouble, 'Check in now', 'Guest takes the room today')}
           </div>
         </Step>
 
-        <Step t={t} n={2} title="Who's staying, when & where?" text="Add every person — each guest gets their own details, room and dates.">
+        <Step t={t} n={2} done={stayDone} title="Who's staying, when & where?" text="Add every person — each guest gets their own details, room and dates.">
           <div className="grid items-end gap-4 sm:grid-cols-2">
             <Stepper t={t} label="People in the party" value={guests} min={1} max={30} onChange={setGuests} error={errors.guests} suffix={guests === 1 ? 'guest' : 'guests'} />
             <p className={`hidden pb-2 text-[11px] leading-snug sm:block ${t.muted}`}>Every guest gets their own details — and a room &amp; dates strip at the foot of their card.</p>
@@ -891,10 +922,16 @@ function RegisterForm({ t, rooms, bookings, onDone }: { t: WorkspaceTheme; rooms
             {stayRow(-1)}
           </div>
 
+          <AnimatePresence initial={false}>
           {companions.map((c, i) => {
             const cMore = c.more || !!(c.email || c.nationality || c.id_number || c.notes)
             return (
-              <div key={i} className={`mt-2 overflow-hidden ${t.radius} ${t.chip}`}>
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, height: 0, y: -8 }} animate={{ opacity: 1, height: 'auto', y: 0 }}
+                exit={{ opacity: 0, height: 0, y: -8 }} transition={{ duration: 0.25, ease: 'easeOut' }}
+                className={`mt-2 overflow-hidden ${t.radius} ${t.chip}`}
+              >
                 <div className="grid gap-4 p-3 sm:grid-cols-2">
                   <p className="flex items-center gap-2 text-xs font-semibold sm:col-span-2">
                     <span className={`grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-bold ${t.iconBox}`}>{i + 2}</span>
@@ -934,13 +971,14 @@ function RegisterForm({ t, rooms, bookings, onDone }: { t: WorkspaceTheme; rooms
                   </div>
                 </div>
                 {stayRow(i)}
-              </div>
+              </motion.div>
             )
           })}
+          </AnimatePresence>
           {errors.companions && <p className="mt-2 text-[11px] text-rose-500">{errors.companions}</p>}
         </Step>
 
-        <Step t={t} n={3} title={mode === 'reserve' ? 'Deposit & payments' : 'Payments'} text="Optional — record money received now: who paid, how much and how.">
+        <Step t={t} n={3} done={paidTotal > 0} title={mode === 'reserve' ? 'Deposit & payments' : 'Payments'} text="Optional — record money received now: who paid, how much and how.">
           {mode === 'reserve' && (
             <div className="mb-4 grid gap-4 sm:grid-cols-2">
               <div className="flex min-w-0 flex-col gap-1">
@@ -967,8 +1005,14 @@ function RegisterForm({ t, rooms, bookings, onDone }: { t: WorkspaceTheme; rooms
           )}
 
           <div className="space-y-2">
+            <AnimatePresence initial={false}>
             {payments.map((p, i) => (
-              <div key={i} className={`grid items-end gap-3 p-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,9rem)_7rem_8rem_1fr_auto] ${t.radius} ${t.chip}`}>
+              <motion.div
+                key={p.id} layout
+                initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }}
+                transition={{ duration: 0.18 }}
+                className={`grid items-end gap-3 p-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,9rem)_7rem_8rem_1fr_auto] ${t.radius} ${t.chip}`}
+              >
                 <Select t={t} label="Paid by" value={p.guest} onChange={(e) => setP(i, 'guest', e.target.value)}>
                   <option value="0">Guest 1{form.guest_name.trim() ? ` · ${form.guest_name.trim()}` : ''}</option>
                   {companions.map((c, j) => (
@@ -986,8 +1030,9 @@ function RegisterForm({ t, rooms, bookings, onDone }: { t: WorkspaceTheme; rooms
                 >
                   <X className="size-3.5" />
                 </button>
-              </div>
+              </motion.div>
             ))}
+            </AnimatePresence>
             <div className="flex flex-wrap items-center gap-2">
               <Button t={t} variant="ghost" onClick={() => setPayments((ps) => [...ps, emptyPayment()])}>
                 <Plus className="size-3.5" /> Add a payment
@@ -1046,7 +1091,17 @@ function RegisterForm({ t, rooms, bookings, onDone }: { t: WorkspaceTheme; rooms
         )}
         <div className={`mt-4 flex items-baseline justify-between gap-4 px-3 py-3 ${t.radius} ${t.chip}`}>
           <span className="text-xs font-semibold">Estimated total</span>
-          <span className={`text-lg ${t.heading}`}>{total != null ? formatMoney(total) : '—'}</span>
+          <span className={`text-lg ${t.heading}`}>
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.span
+                key={total ?? 'none'}
+                initial={{ y: 8, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -8, opacity: 0 }}
+                transition={{ duration: 0.15 }} className="inline-block"
+              >
+                {total != null ? formatMoney(total) : '—'}
+              </motion.span>
+            </AnimatePresence>
+          </span>
         </div>
         <div className="mt-3"><Flash message={message} tone="red" /></div>
         <div className="mt-4 flex flex-col gap-2">
