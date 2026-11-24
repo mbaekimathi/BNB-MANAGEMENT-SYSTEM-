@@ -8,7 +8,9 @@ backend/staticfiles/
 
 # Node
 frontend/node_modules/
-frontend/dist/
+frontend/dist/static
+frontend/dist/media
+frontend/dist.zip
 *.log
 .DS_Store
 backend/media/
