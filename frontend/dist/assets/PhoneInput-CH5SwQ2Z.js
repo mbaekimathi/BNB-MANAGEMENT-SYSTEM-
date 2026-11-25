@@ -1,4 +1,4 @@
-import{r as e}from"./rolldown-runtime-XKyaHtl9.js";import{I as t,L as n,_ as r,g as i}from"./loader-circle-DxWnh0B8.js";import{t as a}from"./check-Bb0ISaq4.js";import{bt as o}from"./RolePage-DxywgXdX.js";import{t as s}from"./search-KWmsnlG1.js";var c=e(n(),1),l=e=>String.fromCodePoint(...[...e.toUpperCase()].map(e=>127462+e.charCodeAt(0)-65)),u=`AF|Afghanistan|93
+import{r as e}from"./rolldown-runtime-XKyaHtl9.js";import{I as t,L as n,_ as r,g as i}from"./loader-circle-DxWnh0B8.js";import{t as a}from"./check-Bb0ISaq4.js";import{bt as o}from"./RolePage-DQ2HIdUh.js";import{t as s}from"./search-KWmsnlG1.js";var c=e(n(),1),l=e=>String.fromCodePoint(...[...e.toUpperCase()].map(e=>127462+e.charCodeAt(0)-65)),u=`AF|Afghanistan|93
 AL|Albania|355
 DZ|Algeria|213
 AS|American Samoa|1684
