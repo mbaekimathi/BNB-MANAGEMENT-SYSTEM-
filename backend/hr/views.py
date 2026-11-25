@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Count, Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework import mixins, serializers, status, viewsets
+from rest_framework import mixins, parsers, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -13,14 +13,18 @@ from rest_framework.views import APIView
 from accounts.models import User
 from accounts.serializers import UserSerializer
 
-from .models import Attendance, LeaveRequest, PayrollEntry
-from .permissions import IsActiveStaff, IsHRStaff
+from .models import Attendance, LeaveRequest, PayrollEntry, TaskAssignment, TaskType
+from .permissions import IsActiveStaff, IsBranchManager, IsHRStaff
 from .serializers import (
     AttendanceSerializer,
     EmployeeBriefSerializer,
     EmployeeUpdateSerializer,
     LeaveRequestSerializer,
     PayrollEntrySerializer,
+    TaskAssignmentSerializer,
+    TaskTypeSerializer,
+    TeamMemberCreateSerializer,
+    TeamMemberUpdateSerializer,
 )
 
 
@@ -125,6 +129,77 @@ class EmployeeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.U
         return self._set_status(request, User.Status.SUSPENDED)
 
 
+class BranchTeamViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.CreateModelMixin,
+    mixins.UpdateModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    """A branch manager registers and manages the staff allocated to their own branch."""
+    permission_classes = [IsBranchManager]
+    http_method_names = ["get", "post", "patch", "delete"]
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser]
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = (
+            User.objects.select_related("branch").filter(branch_id=user.branch_id)
+            if user.branch_id else User.objects.none()
+        )
+        params = self.request.query_params
+        if q := params.get("q", "").strip():
+            qs = qs.filter(
+                Q(first_name__icontains=q) | Q(last_name__icontains=q) | Q(code__icontains=q)
+                | Q(email__icontains=q) | Q(phone__icontains=q)
+            )
+        if s := params.get("status"):
+            qs = qs.filter(status=s)
+        if r := params.get("role"):
+            qs = qs.filter(role=r)
+        return qs.order_by("first_name", "last_name")
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return TeamMemberCreateSerializer
+        if self.action in ("update", "partial_update"):
+            return TeamMemberUpdateSerializer
+        return UserSerializer
+
+    def create(self, request, *args, **kwargs):
+        if not request.user.branch_id:
+            raise serializers.ValidationError({"detail": "You haven't been allocated to a branch yet."})
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        return Response(UserSerializer(user, context={"request": request}).data, status=status.HTTP_201_CREATED)
+
+    def _set_status(self, request, new_status):
+        user = self.get_object()
+        serializer = TeamMemberUpdateSerializer(
+            user, data={"status": new_status}, partial=True, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["post"])
+    def activate(self, request, pk=None):
+        return self._set_status(request, User.Status.ACTIVE)
+
+    @action(detail=True, methods=["post"])
+    def suspend(self, request, pk=None):
+        return self._set_status(request, User.Status.SUSPENDED)
+
+    def perform_destroy(self, instance):
+        if instance == self.request.user:
+            raise serializers.ValidationError({"detail": "You can't delete your own account."})
+        if instance.role == User.Role.BRANCH_MANAGER:
+            raise serializers.ValidationError({"detail": "Only HR can remove a branch manager."})
+        instance.delete()
+
+
 class _RecorderMixin:
     permission_classes = [IsHRStaff]
     http_method_names = ["get", "post", "patch", "delete"]
@@ -192,13 +267,14 @@ class MyAttendanceView(APIView):
                     employee=request.user, date=timezone.localdate(), clock_in=now,
                     status=Attendance.Status.PRESENT, recorded_by=request.user,
                 )
-        elif action == "check-out":
+        elif action in ("check-out", "system-check-out"):
             if not record or not record.clock_in or record.clock_out:
                 raise serializers.ValidationError({"detail": "You need to check in before you can check out."})
             record.clock_out = now
+            record.system_clock_out = action == "system-check-out"
             self._save(record)
         else:
-            raise serializers.ValidationError({"action": "Use 'check-in' or 'check-out'."})
+            raise serializers.ValidationError({"action": "Use 'check-in', 'check-out' or 'system-check-out'."})
 
         return Response(self._data(request, record))
 
@@ -255,3 +331,88 @@ class PayrollEntryViewSet(_RecorderMixin, viewsets.ModelViewSet):
             entry.status, entry.paid_at = PayrollEntry.Status.PAID, timezone.now()
             entry.save()
         return Response(self.get_serializer(entry).data, status=status.HTTP_200_OK)
+
+
+class _BranchScoped:
+    """Everything in these viewsets stays inside the manager's own branch."""
+    permission_classes = [IsBranchManager]
+    http_method_names = ["get", "post", "patch", "delete"]
+
+    def _branch(self):
+        branch = self.request.user.branch
+        if branch is None:
+            raise serializers.ValidationError({"detail": "You haven't been allocated to a branch yet."})
+        return branch
+
+
+class BranchTaskTypeViewSet(_BranchScoped, viewsets.ModelViewSet):
+    """The catalogue of task types a branch manager hands out to their team."""
+    serializer_class = TaskTypeSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        if not user.branch_id:
+            return TaskType.objects.none()
+        return TaskType.objects.filter(branch_id=user.branch_id).annotate(
+            open_count=Count(
+                "assignments",
+                filter=Q(assignments__status__in=[
+                    TaskAssignment.Status.PENDING, TaskAssignment.Status.IN_PROGRESS,
+                ]),
+            )
+        )
+
+    def perform_create(self, serializer):
+        serializer.save(branch=self._branch())
+
+    def perform_destroy(self, instance):
+        if instance.assignments.exists():
+            raise serializers.ValidationError(
+                {"detail": "This task type still has assignments — delete them first."}
+            )
+        instance.delete()
+
+
+class BranchTaskAssignmentViewSet(_BranchScoped, viewsets.ModelViewSet):
+    """Tasks a branch manager has handed to staff at their own branch."""
+    serializer_class = TaskAssignmentSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = TaskAssignment.objects.select_related("task_type", "employee", "assigned_by")
+        if not user.branch_id:
+            return qs.none()
+        qs = qs.filter(branch_id=user.branch_id)
+        if self.action == "list":
+            params = self.request.query_params
+            if d := params.get("date"):
+                qs = qs.filter(date=_parse_date(d))
+            if s := params.get("status"):
+                qs = qs.filter(status=s)
+            if e := params.get("employee"):
+                qs = qs.filter(employee_id=e)
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(branch=self._branch(), assigned_by=self.request.user)
+
+    def _set_status(self, request, new_status):
+        task = self.get_object()
+        if task.status == TaskAssignment.Status.DONE:
+            raise serializers.ValidationError({"detail": "This task is already done."})
+        task.status = new_status
+        task.completed_at = timezone.now() if new_status == TaskAssignment.Status.DONE else None
+        task.save()
+        return Response(self.get_serializer(task).data)
+
+    @action(detail=True, methods=["post"])
+    def start(self, request, pk=None):
+        return self._set_status(request, TaskAssignment.Status.IN_PROGRESS)
+
+    @action(detail=True, methods=["post"])
+    def complete(self, request, pk=None):
+        return self._set_status(request, TaskAssignment.Status.DONE)
+
+    @action(detail=True, methods=["post"])
+    def cancel(self, request, pk=None):
+        return self._set_status(request, TaskAssignment.Status.CANCELLED)

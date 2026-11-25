@@ -17,6 +17,9 @@ class Attendance(models.Model):
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PRESENT)
     clock_in = models.TimeField(null=True, blank=True)
     clock_out = models.TimeField(null=True, blank=True)
+    # True when the system ended the shift after the session-check prompt went
+    # unanswered — not the employee clocking out normally.
+    system_clock_out = models.BooleanField("clocked out by the system", default=False)
     note = models.CharField(max_length=255, blank=True)
     recorded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
@@ -25,6 +28,10 @@ class Attendance(models.Model):
 
     class Meta:
         ordering = ["-date", "employee__first_name"]
+        indexes = [
+            # The register is read one day at a time across every employee.
+            models.Index(fields=["date"], name="attendance_date"),
+        ]
         constraints = [models.UniqueConstraint(fields=["employee", "date"], name="one_attendance_per_day",
             violation_error_message="Attendance for this employee on this day is already recorded.")]
 
@@ -60,6 +67,12 @@ class LeaveRequest(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        indexes = [
+            # HR screens list requests by status, and "who is away today" is a
+            # start/end window lookup.
+            models.Index(fields=["status"], name="leave_status"),
+            models.Index(fields=["start_date", "end_date"], name="leave_period"),
+        ]
 
     @property
     def days(self):
@@ -86,6 +99,10 @@ class PayrollEntry(models.Model):
 
     class Meta:
         ordering = ["-period", "employee__first_name"]
+        indexes = [
+            # Payroll is read one month at a time, often split by paid/draft.
+            models.Index(fields=["period", "status"], name="payroll_period_status"),
+        ]
         verbose_name_plural = "payroll entries"
         constraints = [models.UniqueConstraint(fields=["employee", "period"], name="one_payslip_per_month",
             violation_error_message="This employee already has a payslip for that month.")]
@@ -93,3 +110,57 @@ class PayrollEntry(models.Model):
     @property
     def net_pay(self):
         return self.basic_salary + self.allowances - self.deductions
+
+
+class TaskType(models.Model):
+    """A kind of work a branch manager hands out — e.g. "Room cleaning" or "Pool duty"."""
+
+    branch = models.ForeignKey("bnb.Branch", on_delete=models.CASCADE, related_name="task_types")
+    name = models.CharField(max_length=80)
+    description = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [models.UniqueConstraint(fields=["branch", "name"], name="unique_task_type_per_branch",
+            violation_error_message="A task type with this name already exists.")]
+
+    def __str__(self):
+        return f"{self.name} · {self.branch.name}"
+
+
+class TaskAssignment(models.Model):
+    """A task handed to an employee for a shift day, with an optional time window."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        IN_PROGRESS = "in_progress", "In progress"
+        DONE = "done", "Done"
+        CANCELLED = "cancelled", "Cancelled"
+
+    branch = models.ForeignKey("bnb.Branch", on_delete=models.CASCADE, related_name="task_assignments")
+    task_type = models.ForeignKey(TaskType, on_delete=models.CASCADE, related_name="assignments")
+    employee = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="task_assignments"
+    )
+    date = models.DateField("shift day")
+    start = models.TimeField(null=True, blank=True)
+    end = models.TimeField(null=True, blank=True)
+    status = models.CharField(max_length=15, choices=Status.choices, default=Status.PENDING)
+    note = models.CharField(max_length=255, blank=True)
+    assigned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    completed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date", "start", "employee__first_name"]
+        indexes = [
+            # The shift board reads a branch's tasks for a day, often by status.
+            models.Index(fields=["branch", "date", "status"], name="task_branch_date_status"),
+        ]
+
+    def clean(self):
+        if self.start and self.end and self.end < self.start:
+            raise ValidationError({"end": "The end time can't be before the start time."})

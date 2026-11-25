@@ -38,6 +38,7 @@ class UserSerializer(serializers.ModelSerializer):
         if not obj.branch_id:
             return None
         b = obj.branch
+        themes = getattr(getattr(b, "settings", None), "role_themes", None) or {}
         return {
             "id": b.id,
             "name": b.name,
@@ -46,6 +47,7 @@ class UserSerializer(serializers.ModelSerializer):
             "phone": b.phone,
             "email": b.email,
             "photo": b.photo.url if b.photo else None,
+            "theme": themes.get(obj.role) or None,
         }
 
 

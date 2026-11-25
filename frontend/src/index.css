@@ -74,3 +74,75 @@ input:-webkit-autofill:focus {
 .dark input:-webkit-autofill:focus {
   -webkit-text-fill-color: #f1f5f9;
 }
+
+/* ---------- Printable report document ----------
+   reportDoc.ts snapshots the report area into #report-print, then prints —
+   everything else on the page is hidden so the output is a clean document. */
+#report-print { display: none; }
+
+@media print {
+  @page { size: A4 landscape; margin: 12mm; }
+  body > :not(#report-print) { display: none !important; }
+
+  #report-print {
+    display: block !important;
+    font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+    color: #0f172a;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  #report-print * { box-shadow: none !important; text-shadow: none !important; }
+  #report-print button,
+  #report-print input,
+  #report-print select,
+  #report-print textarea { display: none !important; }
+  #report-print .overflow-x-auto { overflow: visible !important; }
+  #report-print table { min-width: 0 !important; width: 100% !important; }
+  #report-print thead { display: table-header-group; }
+  /* Totals stay at the end of the table — table-footer-group would repeat them on every page. */
+  #report-print tfoot { display: table-row-group; }
+  #report-print tr, #report-print td, #report-print th { break-inside: avoid; }
+  #report-print .fixed, #report-print .sticky { position: static !important; }
+  #report-print .rp-body > * + * { margin-top: 14px; }
+  #report-print .rp-body section { break-inside: auto; }
+
+  /* Compact stat cards — a slim strip of figures instead of the big cards. */
+  #report-print .rp-body > .grid { gap: 8px !important; }
+  #report-print .stat-card { padding: 7px 12px !important; gap: 8px !important; }
+  #report-print .stat-card > span { display: none !important; }
+  #report-print .stat-card p { font-size: 8px !important; }
+  #report-print .stat-card p:nth-of-type(2) { font-size: 12px !important; font-weight: 700; }
+  #report-print .stat-card p:nth-of-type(3) { font-size: 7.5px !important; }
+
+  /* ---- Company letterhead ---- */
+  #report-print .rp-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding-bottom: 12px;
+  }
+  #report-print .rp-brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+  #report-print .rp-logo {
+    width: 52px; height: 52px; flex: none;
+    border-radius: 12px; object-fit: cover;
+    border: 1px solid #e2e8f0; background: #fff;
+  }
+  #report-print .rp-mono {
+    display: grid; place-items: center;
+    background: #0b1020; color: #e9b964;
+    font-size: 18px; font-weight: 800; letter-spacing: 0.06em;
+  }
+  #report-print .rp-company { font-size: 20px; font-weight: 800; letter-spacing: -0.01em; }
+  #report-print .rp-contact { margin-top: 2px; font-size: 9.5px; color: #64748b; }
+  #report-print .rp-meta { flex: none; text-align: right; }
+  #report-print .rp-title { font-size: 12.5px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
+  #report-print .rp-sub { margin-top: 2px; font-size: 9.5px; color: #64748b; }
+  #report-print .rp-rule { height: 3px; background: #c8913a; margin: 0 0 16px; }
+  #report-print .rp-foot {
+    display: flex; justify-content: space-between; gap: 16px;
+    margin-top: 20px; padding-top: 8px;
+    border-top: 1px solid #e2e8f0;
+    font-size: 8.5px; color: #94a3b8;
+  }
+}

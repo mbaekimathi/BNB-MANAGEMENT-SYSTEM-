@@ -29,5 +29,10 @@ export const isBranchRole = (role: Role) => BRANCH_ROLES.includes(role)
 
 export const rolePath = (role: Role) => `/${ROLE_SLUGS[role]}`
 
+/** Base URL of the role's client list/portal section. The manager reaches it
+ *  through "Guest history"; the receptionist through "Clients". */
+export const clientPath = (role: Role) =>
+  `${rolePath(role)}/${role === 'branch_manager' ? 'guest-history' : 'clients'}`
+
 export const roleFromSlug = (slug: string | undefined) =>
   (Object.keys(ROLE_SLUGS) as Role[]).find((r) => ROLE_SLUGS[r] === slug)

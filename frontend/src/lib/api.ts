@@ -18,6 +18,8 @@ export interface BranchInfo {
   phone: string
   email: string
   photo: string | null
+  /** Workspace theme name the branch picked for this user's role, if any. */
+  theme: string | null
 }
 
 export interface Employee {
@@ -126,6 +128,24 @@ api.interceptors.response.use(
 )
 
 export type FieldErrors = Record<string, string>
+
+/**
+ * De-dupes identical in-flight GETs — several widgets on a page often mount the
+ * same list at once (e.g. stats + charts both fetch bookings). Once a request
+ * settles, the next call goes out fresh, so data never goes stale.
+ */
+export function share<P = void, T = unknown>(load: (params: P) => Promise<T>): (params?: P) => Promise<T> {
+  const inflight = new Map<string, Promise<T>>()
+  return (params?: P) => {
+    const key = JSON.stringify(params ?? null)
+    let p = inflight.get(key)
+    if (!p) {
+      p = load(params as P).finally(() => inflight.delete(key))
+      inflight.set(key, p)
+    }
+    return p
+  }
+}
 
 /** Turns a DRF error response into a top-level message plus per-field messages. */
 export function parseApiError(err: unknown): { message: string; fields: FieldErrors } {

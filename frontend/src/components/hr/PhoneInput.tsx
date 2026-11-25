@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { Check, ChevronDown, Search } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { COUNTRIES, DEFAULT_COUNTRY, flagUrl, type Country } from '../../lib/countries'
+import { COUNTRIES, DEFAULT_COUNTRY, dialCountry, flagUrl, subscriberLength, type Country } from '../../lib/countries'
 import type { WorkspaceTheme } from '../../lib/workspaces'
 
 function Flag({ c }: { c: Country }) {
@@ -30,13 +30,21 @@ interface Props {
 }
 
 function matchCountry(value: string): Country {
-  if (!value.startsWith('+')) return DEFAULT_COUNTRY
-  const digits = value.slice(1).replace(/\D/g, '')
-  let best: Country | null = null
-  for (const c of COUNTRIES) {
-    if (digits.startsWith(c.dial) && (!best || c.dial.length > best.dial.length)) best = c
-  }
-  return best ?? DEFAULT_COUNTRY
+  return dialCountry(value) ?? DEFAULT_COUNTRY
+}
+
+/** Canonical "+dial<subscriber>" for free-typed input. A long enough entry that opens
+ *  with a real dial code is kept under that code — a wrongly-input "254…" under +254
+ *  folds to "+254…", "1 555…" lands under +1. Anything else is a local number for the
+ *  picked country: the trunk 0 drops ("0795…" → "+254 795…"). */
+function canonValue(fallbackDial: string, raw: string): string {
+  const digits = raw.replace(/\D/g, '')
+  let best = ''
+  for (const c of COUNTRIES) if (digits.startsWith(c.dial) && c.dial.length > best.length) best = c.dial
+  // 10+ digits is longer than any local subscriber — safe to read as international.
+  const intl = !!best && digits.length >= 10 && digits.length - best.length >= 6
+  const d = (intl ? digits.slice(best.length) : digits).replace(/^0+/, '')
+  return d ? `+${intl ? best : fallbackDial}${d}` : ''
 }
 
 export function PhoneInput({ t, label, error, value, onChange, required }: Props) {
@@ -45,7 +53,47 @@ export function PhoneInput({ t, label, error, value, onChange, required }: Props
   const [query, setQuery] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
   const prefix = `+${country.dial}`
-  const local = value.startsWith(prefix) ? value.slice(prefix.length) : ''
+  const local = value.startsWith(prefix) ? value.slice(prefix.length) : value.startsWith('+') ? '' : value
+
+  // Cap the subscriber at the country's correct length — extra digits can't be
+  // typed. A leading trunk 0 doesn't count ("0700…" still types, then the blur
+  // canonicaliser folds it into the subscriber).
+  const emit = (raw: string) => {
+    const max = subscriberLength(country)
+    let out = '', n = 0, leading = true
+    for (const ch of raw) {
+      if (/\d/.test(ch)) {
+        if (leading && ch === '0') { out += ch; continue }
+        leading = false
+        if (++n > max) continue
+      }
+      out += ch
+    }
+    onChange(out.replace(/\D/g, '') ? `${prefix}${out}` : '')
+  }
+
+  // The flag follows the value's +dial code — an autofilled +256 number shows Uganda.
+  const [seen, setSeen] = useState(value)
+  if (value !== seen) {
+    setSeen(value)
+    const c = matchCountry(value)
+    if (c.iso !== country.iso) setCountry(c)
+  }
+
+  // The stored value is always international: a bare local number (e.g. autofilled
+  // from an old booking) is filed under the selected code.
+  useEffect(() => {
+    if (!value || value.startsWith('+')) return
+    const next = canonValue(country.dial, value)
+    if (next !== value) onChange(next)
+  }, [value]) // eslint-disable-line react-hooks/exhaustive-deps -- resync on value changes only
+
+  // Once typing is done, rewrite a wrongly-input entry in canonical +dial<subscriber>
+  // form — "0795…" or "254…" under +254 both land as "+254795…".
+  const done = () => {
+    const next = canonValue(country.dial, local)
+    if (next !== value) onChange(next)
+  }
 
   useEffect(() => {
     if (open) setTimeout(() => searchRef.current?.focus(), 30)
@@ -65,7 +113,7 @@ export function PhoneInput({ t, label, error, value, onChange, required }: Props
   const choose = (c: Country) => {
     setCountry(c)
     close()
-    onChange(`+${c.dial}${local}`)
+    onChange(canonValue(c.dial, local))
   }
 
   return (
@@ -95,7 +143,8 @@ export function PhoneInput({ t, label, error, value, onChange, required }: Props
           required={required}
           value={local}
           placeholder="700 000 000"
-          onChange={(e) => onChange(prefix + e.target.value.replace(/[^\d\s-]/g, ''))}
+          onChange={(e) => emit(e.target.value.replace(/[^\d\s-]/g, ''))}
+          onBlur={done}
           className="min-w-0 flex-1 bg-transparent px-3 text-sm outline-none [color-scheme:light] dark:[color-scheme:dark]"
         />
         <AnimatePresence>

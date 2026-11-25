@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion'
-import { BedDouble, Building2, CalendarCheck, Clock, Search, Users, Wrench } from 'lucide-react'
+import { BedDouble, Building2, CalendarCheck, Clock, RefreshCw, Search, Users, Wrench } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { Empty, ErrorNote, Loading, PageHeader, Panel, Pill, Stat, type Tone } from '../components/hr/ui'
+import { Button, Empty, ErrorNote, Loading, PageHeader, Panel, Pill, Stat, type Tone } from '../components/hr/ui'
 import type { Employee } from '../lib/api'
 import { bnb, type Booking, type Room } from '../lib/bnb'
 import { formatMoney, useApi } from '../lib/hr'
@@ -14,6 +14,7 @@ type State = 'free' | 'occupied' | 'reserved' | 'unavailable'
 
 const STATE_TONE: Record<State, Tone> = { free: 'green', occupied: 'blue', reserved: 'amber', unavailable: 'red' }
 const STATE_LABEL: Record<State, string> = { free: 'Free', occupied: 'Occupied', reserved: 'Reserved', unavailable: 'Unavailable' }
+const STATE_ORDER: Record<State, number> = { free: 0, reserved: 1, occupied: 2, unavailable: 3 }
 const FILTERS: { value: State | 'all'; label: string }[] = [
   { value: 'all', label: 'All rooms' },
   { value: 'free', label: 'Free' },
@@ -32,7 +33,7 @@ function stateOf(room: Room, occupied: Booking | undefined, next: Booking | unde
 
 export default function RoomAvailabilityPage({ item, t, me }: { item: NavItem; t: WorkspaceTheme; me: Employee }) {
   const rooms = useApi(bnb.rooms)
-  const bookings = useApi(bnb.bookings)
+  const bookings = useApi(() => bnb.bookings({ active: '1' }))
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState<State | 'all'>('all')
 
@@ -55,11 +56,13 @@ export default function RoomAvailabilityPage({ item, t, me }: { item: NavItem; t
     [rooms.data, occupiedBy, nextBy],
   )
   const count = (s: State) => rows.filter((r) => r.state === s).length
-  const list = rows.filter(
-    ({ room, occ, next, state }) =>
-      (filter === 'all' || state === filter) &&
-      (!q || `${room.name} ${room.type_label} ${occ?.guest_name ?? ''} ${next?.guest_name ?? ''}`.toLowerCase().includes(q.toLowerCase())),
-  )
+  const list = rows
+    .filter(
+      ({ room, occ, next, state }) =>
+        (filter === 'all' || state === filter) &&
+        (!q || `${room.name} ${room.type_label} ${occ?.guest_name ?? ''} ${next?.guest_name ?? ''}`.toLowerCase().includes(q.toLowerCase())),
+    )
+    .sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state])
 
   const loading = (rooms.loading || bookings.loading) && !rooms.data
   const error = rooms.error || bookings.error
@@ -110,6 +113,9 @@ export default function RoomAvailabilityPage({ item, t, me }: { item: NavItem; t
                   </button>
                 ))}
               </div>
+              <Button t={t} variant="ghost" onClick={() => { rooms.reload(); bookings.reload() }} className="sm:ml-auto">
+                <RefreshCw className={`size-3.5 ${rooms.loading || bookings.loading ? 'animate-spin' : ''}`} /> Refresh
+              </Button>
             </div>
 
             {error ? (

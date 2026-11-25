@@ -13,6 +13,16 @@ class IsHRStaff(BasePermission):
         return bool(user and user.is_authenticated and user.can_sign_in and user.role in HR_ROLES)
 
 
+class IsBranchManager(BasePermission):
+    message = "Only an active branch manager can manage their branch team."
+
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(
+            user and user.is_authenticated and user.can_sign_in and user.role == User.Role.BRANCH_MANAGER
+        )
+
+
 class IsActiveStaff(BasePermission):
     message = "Only active staff can track their attendance."
 

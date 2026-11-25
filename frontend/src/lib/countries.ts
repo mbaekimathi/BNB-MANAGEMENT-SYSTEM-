@@ -256,5 +256,61 @@ export const COUNTRIES: Country[] = DATA.split('\n').map((line) => {
 
 export const DEFAULT_COUNTRY: Country = COUNTRIES.find((c) => c.iso === 'KE') ?? COUNTRIES[0]
 
+/** The national subscriber length — digits after the dial code, trunk 0 excluded —
+ *  for countries we know. PhoneInput caps typing at it and the forms validate to
+ *  it; unlisted countries fall back to the SUBSCRIBER_MIN–MAX window. */
+export const SUBSCRIBER_MIN = 7
+export const SUBSCRIBER_MAX = 12
+export const SUBSCRIBER_LENGTH: Record<string, number> = {
+  // East Africa & neighbours — the branches' market.
+  KE: 9, UG: 9, TZ: 9, RW: 9, BI: 8, SS: 9, ET: 9, SO: 9, DJ: 8, ER: 7, SD: 9, CD: 9,
+  // Rest of Africa commonly seen at the desk.
+  MW: 9, ZM: 9, ZW: 9, MZ: 9, BW: 8, NA: 9, ZA: 9, NG: 10, GH: 9, CM: 9, CI: 10, SN: 9,
+  EG: 10, MA: 9, DZ: 9, TN: 8,
+  // Common international.
+  US: 10, CA: 10, GB: 10, IN: 10, PK: 10, CN: 11, JP: 10, AU: 9, AE: 9, SA: 9, QA: 8,
+  KW: 8, IL: 9, TR: 10, ES: 9, NL: 9, BE: 9, SE: 9, NO: 8, DK: 8, RU: 10, MX: 10,
+  AR: 10, IQ: 10, IR: 10,
+}
+
+/** The subscriber cap for a country's local input — exact where known. */
+export const subscriberLength = (c: Country) => SUBSCRIBER_LENGTH[c.iso] ?? SUBSCRIBER_MAX
+
+/** The country a "+dial…" value belongs to — longest matching dial code wins. */
+export function dialCountry(value: string): Country | null {
+  if (!value.startsWith('+')) return null
+  const d = value.slice(1).replace(/\D/g, '')
+  let best: Country | null = null
+  for (const c of COUNTRIES) if (d.startsWith(c.dial) && (!best || c.dial.length > best.dial.length)) best = c
+  return best
+}
+
+/** The subscriber digits as typed locally — a leading +dial code and the trunk 0 are
+ *  stripped, so "+254795…" and "0795…" both reduce to "795…". */
+export function localDigits(value: string): string {
+  let d = value.replace(/\D/g, '')
+  if (value.trim().startsWith('+')) {
+    let best = ''
+    for (const c of COUNTRIES) if (d.startsWith(c.dial) && c.dial.length > best.length) best = c.dial
+    d = d.slice(best.length)
+  }
+  return d.replace(/^0+/, '')
+}
+
+/** The subscriber count `value` should hold — exact for a known country, else the
+ *  realistic international window (SUBSCRIBER_MIN–MAX). */
+export function expectedDigits(value: string): { min: number; max: number } {
+  const len = SUBSCRIBER_LENGTH[(dialCountry(value) ?? DEFAULT_COUNTRY).iso]
+  return len ? { min: len, max: len } : { min: SUBSCRIBER_MIN, max: SUBSCRIBER_MAX }
+}
+
+/** Whether the stored phone holds the correct number of subscriber digits for its
+ *  country — e.g. exactly 9 under +254, not "at least 9 digits overall". */
+export function phoneComplete(value: string): boolean {
+  const n = localDigits(value).length
+  const { min, max } = expectedDigits(value)
+  return n >= min && n <= max
+}
+
 /** 20px-wide flag image; falls back to the flag emoji if it can't load. */
 export const flagUrl = (iso: string) => `https://flagcdn.com/w20/${iso.toLowerCase()}.png`

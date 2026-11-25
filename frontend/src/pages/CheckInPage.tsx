@@ -43,7 +43,7 @@ export default function CheckInPage({ item, t }: { item: NavItem; t: WorkspaceTh
       const rec = await hr.clock(action)
       setData((d) => (d ? { ...d, record: rec } : d))
       setFlash({
-        text: action === 'check-in' ? 'Checked in — have a great shift.' : 'Checked out — see you next time.',
+        text: action === 'check-in' ? 'Clocked in — have a great shift.' : 'Clocked out — see you next time.',
         bad: false,
       })
     } catch (err) {
@@ -59,8 +59,8 @@ export default function CheckInPage({ item, t }: { item: NavItem; t: WorkspaceTh
       <PageHeader t={t} icon={item.icon} title={item.label} text={item.description} />
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-        <Stat t={t} i={0} icon={LogIn} label="Checked in" value={formatTime(record?.clock_in ?? null)} />
-        <Stat t={t} i={1} icon={LogOut} label="Checked out" value={formatTime(record?.clock_out ?? null)} />
+        <Stat t={t} i={0} icon={LogIn} label="Clocked in" value={formatTime(record?.clock_in ?? null)} />
+        <Stat t={t} i={1} icon={LogOut} label="Clocked out" value={formatTime(record?.clock_out ?? null)} />
         <Stat t={t} i={2} icon={Timer} label="Time on shift" value={start ? elapsed(worked) : '—'} hint={onShift ? 'Still counting' : undefined} />
       </div>
 
@@ -73,7 +73,7 @@ export default function CheckInPage({ item, t }: { item: NavItem; t: WorkspaceTh
         ) : (
           <div className="relative flex flex-col items-center gap-4 py-8 text-center sm:py-10">
             <Pill tone={onShift ? 'green' : done ? 'blue' : 'slate'}>
-              {onShift ? 'On shift now' : done ? 'Shift complete' : 'Not checked in'}
+              {onShift ? 'On shift now' : done ? 'Shift complete' : 'Not clocked in'}
             </Pill>
 
             <p className={`font-mono text-5xl font-semibold tabular-nums tracking-tight sm:text-7xl ${t.heading}`}>
@@ -85,7 +85,7 @@ export default function CheckInPage({ item, t }: { item: NavItem; t: WorkspaceTh
                 ? `Working since ${formatTime(record!.clock_in)}`
                 : done
                   ? `Today's shift: ${formatTime(record!.clock_in)} – ${formatTime(record!.clock_out)}`
-                  : 'Check in to start tracking your working time.'}
+                  : 'Clock in to start tracking your working time.'}
             </p>
 
             <Flash message={flash.text} tone={flash.bad ? 'red' : 'green'} />
@@ -101,11 +101,11 @@ export default function CheckInPage({ item, t }: { item: NavItem; t: WorkspaceTh
                 >
                   {onShift ? (
                     <Button t={t} variant="danger" busy={busy} onClick={() => act('check-out')} className="h-12 px-10 text-sm">
-                      <LogOut className="size-4" /> Check out
+                      <LogOut className="size-4" /> Employee clock out
                     </Button>
                   ) : (
                     <Button t={t} busy={busy} onClick={() => act('check-in')} className="h-12 px-10 text-sm">
-                      <LogIn className="size-4" /> Check in
+                      <LogIn className="size-4" /> Employee clock in
                     </Button>
                   )}
                 </motion.div>

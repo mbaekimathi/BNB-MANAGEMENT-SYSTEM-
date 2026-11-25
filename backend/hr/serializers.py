@@ -3,13 +3,20 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from accounts.models import User, six_digit_code
-from accounts.serializers import MAX_PHOTO_BYTES, PIN_RE, UserSerializer
+from accounts.serializers import MAX_PHOTO_BYTES, PIN_RE, RegisterSerializer, UserSerializer
 from bnb.models import Branch
 
-from .models import Attendance, LeaveRequest, PayrollEntry
+from .models import Attendance, LeaveRequest, PayrollEntry, TaskAssignment, TaskType
 
 BRANCH_ROLES = {
     User.Role.BRANCH_MANAGER,
+    User.Role.BRANCH_RECEPTIONIST,
+    User.Role.BRANCH_STORE_MANAGER,
+    User.Role.BRANCH_EMPLOYEE,
+}
+
+# Staff roles a branch manager is allowed to hand out (no branch_manager — that's an HR decision).
+TEAM_ROLES = {
     User.Role.BRANCH_RECEPTIONIST,
     User.Role.BRANCH_STORE_MANAGER,
     User.Role.BRANCH_EMPLOYEE,
@@ -120,6 +127,49 @@ class EmployeeUpdateSerializer(serializers.ModelSerializer):
         return UserSerializer(instance, context=self.context).data
 
 
+class TeamMemberCreateSerializer(RegisterSerializer):
+    """A branch manager registers a staff member directly — the account starts
+    active and allocated to the manager's own branch."""
+    role = serializers.ChoiceField(choices=User.Role.choices, default=User.Role.BRANCH_EMPLOYEE)
+
+    class Meta(RegisterSerializer.Meta):
+        fields = [*RegisterSerializer.Meta.fields, "role"]
+
+    def validate_role(self, value):
+        if value not in TEAM_ROLES:
+            raise serializers.ValidationError("You can only register branch staff roles.")
+        return value
+
+    def create(self, validated_data):
+        photo = validated_data.pop("photo", None)
+        user = User.objects.create_user(
+            status=User.Status.ACTIVE, branch=self.context["request"].user.branch, **validated_data
+        )
+        if photo:
+            user.photo.save(photo.name, photo, save=True)
+        return user
+
+
+class TeamMemberUpdateSerializer(EmployeeUpdateSerializer):
+    """Branch managers edit staff at their own branch: no company roles, no
+    branch transfers, no touching other branch managers' role or status."""
+
+    def validate(self, attrs):
+        request = self.context["request"]
+        if self.instance.role == User.Role.BRANCH_MANAGER and (
+            attrs.get("role", self.instance.role) != self.instance.role
+            or attrs.get("status", self.instance.status) != self.instance.status
+        ):
+            raise serializers.ValidationError("Only HR can change a branch manager's role or status.")
+        if "role" in attrs and attrs["role"] not in TEAM_ROLES:
+            raise serializers.ValidationError({"role": "You can only give branch staff roles."})
+        if "branch" in attrs:
+            if attrs["branch"] is not None and attrs["branch"] != request.user.branch:
+                raise serializers.ValidationError({"branch": "Staff can only stay at your own branch."})
+            del attrs["branch"]
+        return super().validate(attrs)
+
+
 class _EmployeeLinked(serializers.ModelSerializer):
     employee = EmployeeBriefSerializer(read_only=True)
     employee_id = serializers.PrimaryKeyRelatedField(
@@ -147,7 +197,10 @@ class AttendanceSerializer(_EmployeeLinked):
 
     class Meta:
         model = Attendance
-        fields = ["id", "employee", "employee_id", "date", "status", "status_label", "clock_in", "clock_out", "note"]
+        fields = [
+            "id", "employee", "employee_id", "date", "status", "status_label",
+            "clock_in", "clock_out", "system_clock_out", "note",
+        ]
 
 
 class LeaveRequestSerializer(_EmployeeLinked):
@@ -184,4 +237,54 @@ class PayrollEntrySerializer(_EmployeeLinked):
         for f in ("basic_salary", "allowances", "deductions"):
             if attrs.get(f) is not None and attrs[f] < 0:
                 raise serializers.ValidationError({f: "Amounts can't be negative."})
+        return super().validate(attrs)
+
+
+class TaskTypeSerializer(serializers.ModelSerializer):
+    open_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TaskType
+        fields = ["id", "name", "description", "open_count", "created_at"]
+        read_only_fields = ["created_at"]
+
+    def get_open_count(self, obj):
+        return getattr(obj, "open_count", 0)
+
+    def validate_name(self, value):
+        value = value.strip()
+        qs = TaskType.objects.filter(
+            branch_id=self.context["request"].user.branch_id, name__iexact=value
+        )
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("A task type with this name already exists.")
+        return value
+
+
+class TaskAssignmentSerializer(_EmployeeLinked):
+    task_type = TaskTypeSerializer(read_only=True)
+    task_type_id = serializers.PrimaryKeyRelatedField(
+        source="task_type", queryset=TaskType.objects.all(), write_only=True
+    )
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+    assigned_by = serializers.CharField(source="assigned_by.get_full_name", read_only=True, default=None)
+
+    class Meta:
+        model = TaskAssignment
+        fields = [
+            "id", "task_type", "task_type_id", "employee", "employee_id", "date", "start", "end",
+            "status", "status_label", "note", "assigned_by", "completed_at", "created_at",
+        ]
+        read_only_fields = ["status", "assigned_by", "completed_at", "created_at"]
+
+    def validate(self, attrs):
+        branch_id = self.context["request"].user.branch_id
+        employee = attrs.get("employee", self.instance.employee if self.instance else None)
+        task_type = attrs.get("task_type", self.instance.task_type if self.instance else None)
+        if employee is not None and employee.branch_id != branch_id:
+            raise serializers.ValidationError({"employee_id": "This person doesn't work at your branch."})
+        if task_type is not None and task_type.branch_id != branch_id:
+            raise serializers.ValidationError({"task_type_id": "This task type doesn't belong to your branch."})
         return super().validate(attrs)

@@ -1,4 +1,6 @@
 import {
+  ArrowDownToLine,
+  ArrowLeftRight,
   Award,
   Banknote,
   BarChart3,
@@ -8,18 +10,25 @@ import {
   Building2,
   CalendarCheck,
   CalendarDays,
+  Calculator,
   ClipboardCheck,
   ClipboardList,
+  Clock,
   ConciergeBell,
   Contact,
   CreditCard,
   FileBarChart,
+  Gift,
+  Hourglass,
   LayoutDashboard,
   LifeBuoy,
   ListChecks,
   MessageSquare,
+  Package,
   PackageCheck,
   PackageSearch,
+  Palette,
+  Plus,
   Receipt,
   Settings,
   ShieldCheck,
@@ -46,6 +55,9 @@ export interface NavItem {
   description: string
   /** Sub-pages; when set, this item opens its own sidebar with these links. */
   children?: NavItem[]
+  /** On a module's sub-page this label becomes the sidebar's only link —
+   *  it appends `?register` so the page can open its register view/popup. */
+  register?: string
 }
 
 /**
@@ -103,6 +115,18 @@ const overview = (description: string): NavItem => ({
   description,
 })
 
+/** Self-service clock in/out, available to every role. */
+const clockInOut: NavItem = {
+  slug: 'check-in',
+  label: 'Employee clock in / out',
+  short: 'Clock',
+  icon: ConciergeBell,
+  description: 'Clock in, track your working time and clock out.',
+  children: [
+    { slug: '', label: 'Clock in / out', short: 'Clock', icon: ConciergeBell, description: 'Clock in, track your working time and clock out.' },
+  ],
+}
+
 /** Synthetic nav item for the profile page reached from the header user menu. */
 export const PROFILE_ITEM: NavItem = {
   slug: 'profile',
@@ -148,11 +172,37 @@ export const WORKSPACES: Record<Role, Workspace> = {
     },
     nav: [
       { ...overview('Company-wide control centre.'), label: 'Admin console', short: 'Console' },
-      { slug: 'staff-accounts', label: 'Staff accounts', short: 'Staff', icon: Users, description: 'Activate, suspend and manage every staff account.' },
-      { slug: 'branch-setup', label: 'Branch setup', short: 'Setup', icon: Building2, description: 'Add branches and assign their managers.' },
-      { slug: 'permissions', label: 'Permissions', short: 'Access', icon: ShieldCheck, description: 'Decide what each role can see and do.' },
-      { slug: 'audit-reports', label: 'Audit reports', short: 'Audit', icon: FileBarChart, description: 'Bookings, revenue and stock across the company.' },
-      { slug: 'company-settings', label: 'Company settings', short: 'Config', icon: Settings, description: 'Company details, taxes and system preferences.' },
+      clockInOut,
+      {
+        slug: 'staff-accounts', label: 'Staff accounts', short: 'Staff', icon: Users, description: 'Activate, suspend and manage every staff account.',
+        children: [
+          { slug: '', label: 'All staff', short: 'Staff', icon: Users, description: 'Activate, suspend and manage every staff account.' },
+        ],
+      },
+      {
+        slug: 'branch-setup', label: 'Branch setup', short: 'Setup', icon: Building2, description: 'Add branches and assign their managers.',
+        children: [
+          { slug: '', label: 'Branches', short: 'Branches', icon: Building2, description: 'Add branches and assign their managers.' },
+        ],
+      },
+      {
+        slug: 'permissions', label: 'Permissions', short: 'Access', icon: ShieldCheck, description: 'Decide what each role can see and do.',
+        children: [
+          { slug: '', label: 'Permissions', short: 'Access', icon: ShieldCheck, description: 'Decide what each role can see and do.' },
+        ],
+      },
+      {
+        slug: 'audit-reports', label: 'Audit reports', short: 'Audit', icon: FileBarChart, description: 'Bookings, revenue and stock across the company.',
+        children: [
+          { slug: '', label: 'Audit reports', short: 'Audit', icon: FileBarChart, description: 'Bookings, revenue and stock across the company.' },
+        ],
+      },
+      {
+        slug: 'company-settings', label: 'Company settings', short: 'Config', icon: Settings, description: 'Company details, taxes and system preferences.',
+        children: [
+          { slug: '', label: 'Settings', short: 'Config', icon: Settings, description: 'Company details, taxes and system preferences.' },
+        ],
+      },
     ],
   },
 
@@ -191,11 +241,37 @@ export const WORKSPACES: Record<Role, Workspace> = {
     },
     nav: [
       { ...overview('How every branch is performing today.'), label: 'Executive summary', short: 'Summary' },
-      { slug: 'branch-performance', label: 'Branch performance', short: 'Branches', icon: Building2, description: 'Compare branches side by side.' },
-      { slug: 'income', label: 'Company income', short: 'Income', icon: BarChart3, description: 'Daily, monthly and yearly income.' },
-      { slug: 'occupancy-trends', label: 'Occupancy trends', short: 'Trends', icon: BedDouble, description: 'Room occupancy and booking trends.' },
-      { slug: 'leadership', label: 'Branch leadership', short: 'Leaders', icon: Users, description: 'Branch teams and their managers.' },
-      { slug: 'board-reports', label: 'Board reports', short: 'Board', icon: FileBarChart, description: 'Export reports for the board.' },
+      clockInOut,
+      {
+        slug: 'branch-performance', label: 'Branch performance', short: 'Branches', icon: Building2, description: 'Compare branches side by side.',
+        children: [
+          { slug: '', label: 'Performance', short: 'Branches', icon: Building2, description: 'Compare branches side by side.' },
+        ],
+      },
+      {
+        slug: 'income', label: 'Company income', short: 'Income', icon: BarChart3, description: 'Daily, monthly and yearly income.',
+        children: [
+          { slug: '', label: 'Income', short: 'Income', icon: BarChart3, description: 'Daily, monthly and yearly income.' },
+        ],
+      },
+      {
+        slug: 'occupancy-trends', label: 'Occupancy trends', short: 'Trends', icon: BedDouble, description: 'Room occupancy and booking trends.',
+        children: [
+          { slug: '', label: 'Occupancy', short: 'Trends', icon: BedDouble, description: 'Room occupancy and booking trends.' },
+        ],
+      },
+      {
+        slug: 'leadership', label: 'Branch leadership', short: 'Leaders', icon: Users, description: 'Branch teams and their managers.',
+        children: [
+          { slug: '', label: 'Leaders', short: 'Leaders', icon: Users, description: 'Branch teams and their managers.' },
+        ],
+      },
+      {
+        slug: 'board-reports', label: 'Board reports', short: 'Board', icon: FileBarChart, description: 'Export reports for the board.',
+        children: [
+          { slug: '', label: 'Board reports', short: 'Board', icon: FileBarChart, description: 'Export reports for the board.' },
+        ],
+      },
     ],
   },
 
@@ -235,6 +311,7 @@ export const WORKSPACES: Record<Role, Workspace> = {
     },
     nav: [
       { ...overview('Main dashboard for the whole system.'), label: 'Dashboard' },
+      clockInOut,
       {
         slug: 'hr', label: 'HR management', short: 'HR', icon: Users, description: 'Employees, roles, activation and staff records.',
         children: [
@@ -344,11 +421,37 @@ export const WORKSPACES: Record<Role, Workspace> = {
     },
     nav: [
       { ...overview('Central store and supply across all branches.'), label: 'Supply overview', short: 'Supply' },
-      { slug: 'central-store', label: 'Central store', short: 'Central', icon: Warehouse, description: 'Stock held at head office.' },
-      { slug: 'supplier-contracts', label: 'Supplier contracts', short: 'Contracts', icon: Truck, description: 'Supplier contacts, prices and terms.' },
-      { slug: 'purchase-orders', label: 'Purchase orders', short: 'Orders', icon: ShoppingCart, description: 'Order new stock and track deliveries.' },
-      { slug: 'branch-transfers', label: 'Branch transfers', short: 'Transfers', icon: PackageCheck, description: 'Send stock out to branches.' },
-      { slug: 'stock-reports', label: 'Stock reports', short: 'Reports', icon: FileBarChart, description: 'Usage, value and reorder levels.' },
+      clockInOut,
+      {
+        slug: 'central-store', label: 'Central store', short: 'Central', icon: Warehouse, description: 'Stock held at head office.',
+        children: [
+          { slug: '', label: 'Central stock', short: 'Central', icon: Warehouse, description: 'Stock held at head office.' },
+        ],
+      },
+      {
+        slug: 'supplier-contracts', label: 'Supplier contracts', short: 'Contracts', icon: Truck, description: 'Supplier contacts, prices and terms.',
+        children: [
+          { slug: '', label: 'Contracts', short: 'Contracts', icon: Truck, description: 'Supplier contacts, prices and terms.' },
+        ],
+      },
+      {
+        slug: 'purchase-orders', label: 'Purchase orders', short: 'Orders', icon: ShoppingCart, description: 'Order new stock and track deliveries.',
+        children: [
+          { slug: '', label: 'Orders', short: 'Orders', icon: ShoppingCart, description: 'Order new stock and track deliveries.' },
+        ],
+      },
+      {
+        slug: 'branch-transfers', label: 'Branch transfers', short: 'Transfers', icon: PackageCheck, description: 'Send stock out to branches.',
+        children: [
+          { slug: '', label: 'Transfers', short: 'Transfers', icon: PackageCheck, description: 'Send stock out to branches.' },
+        ],
+      },
+      {
+        slug: 'stock-reports', label: 'Stock reports', short: 'Reports', icon: FileBarChart, description: 'Usage, value and reorder levels.',
+        children: [
+          { slug: '', label: 'Reports', short: 'Reports', icon: FileBarChart, description: 'Usage, value and reorder levels.' },
+        ],
+      },
     ],
   },
 
@@ -387,11 +490,37 @@ export const WORKSPACES: Record<Role, Workspace> = {
     },
     nav: [
       { ...overview("This branch's store at a glance."), label: 'Store desk', short: 'Desk' },
-      { slug: 'branch-stock', label: 'Branch stock', short: 'Stock', icon: Boxes, description: 'Everything held in the branch store.' },
-      { slug: 'requisitions', label: 'Requisitions', short: 'Requests', icon: ClipboardList, description: 'Request stock from the company store.' },
-      { slug: 'deliveries', label: 'Deliveries', icon: Truck, description: 'Receive and confirm incoming stock.' },
-      { slug: 'stock-counts', label: 'Stock counts', short: 'Counts', icon: PackageSearch, description: 'Count stock and record differences.' },
-      { slug: 'reorder-report', label: 'Reorder report', short: 'Reorder', icon: FileBarChart, description: 'Branch usage and reorder needs.' },
+      clockInOut,
+      {
+        slug: 'branch-stock', label: 'Branch stock', short: 'Stock', icon: Boxes, description: 'Everything held in the branch store.',
+        children: [
+          { slug: '', label: 'Branch stock', short: 'Stock', icon: Boxes, description: 'Everything held in the branch store.' },
+        ],
+      },
+      {
+        slug: 'requisitions', label: 'Requisitions', short: 'Requests', icon: ClipboardList, description: 'Request stock from the company store.',
+        children: [
+          { slug: '', label: 'Requisitions', short: 'Requests', icon: ClipboardList, description: 'Request stock from the company store.' },
+        ],
+      },
+      {
+        slug: 'deliveries', label: 'Deliveries', icon: Truck, description: 'Receive and confirm incoming stock.',
+        children: [
+          { slug: '', label: 'Deliveries', short: 'Deliveries', icon: Truck, description: 'Receive and confirm incoming stock.' },
+        ],
+      },
+      {
+        slug: 'stock-counts', label: 'Stock counts', short: 'Counts', icon: PackageSearch, description: 'Count stock and record differences.',
+        children: [
+          { slug: '', label: 'Stock counts', short: 'Counts', icon: PackageSearch, description: 'Count stock and record differences.' },
+        ],
+      },
+      {
+        slug: 'reorder-report', label: 'Reorder report', short: 'Reorder', icon: FileBarChart, description: 'Branch usage and reorder needs.',
+        children: [
+          { slug: '', label: 'Reorder report', short: 'Reorder', icon: FileBarChart, description: 'Branch usage and reorder needs.' },
+        ],
+      },
     ],
   },
 
@@ -430,11 +559,73 @@ export const WORKSPACES: Record<Role, Workspace> = {
     },
     nav: [
       { ...overview('Your branch today: guests, rooms and team.'), label: 'Branch overview', short: 'Branch' },
-      { slug: 'branch-bookings', label: 'Branch bookings', short: 'Bookings', icon: CalendarDays, description: 'All reservations for this branch.' },
-      { slug: 'room-management', label: 'Room management', short: 'Rooms', icon: BedDouble, description: 'Room status, prices and maintenance.' },
-      { slug: 'team-shifts', label: 'Team & shifts', short: 'Team', icon: Users, description: 'Shifts and duties for your team.' },
-      { slug: 'guest-history', label: 'Guest history', short: 'History', icon: UserCircle, description: 'Guest history and feedback.' },
-      { slug: 'branch-reports', label: 'Branch results', short: 'Results', icon: FileBarChart, description: 'Branch income and occupancy.' },
+      clockInOut,
+      {
+        slug: 'branch-bookings', label: 'Branch bookings', short: 'Bookings', icon: CalendarDays, description: 'All reservations for this branch.',
+        children: [
+          { slug: '', label: 'Upcoming & history', short: 'Bookings', icon: CalendarDays, description: 'Upcoming arrivals and recent booking history.' },
+          { slug: 'new', label: 'New reservation', short: 'New', icon: UserPlus, description: 'Hold a room for a client\'s future stay.' },
+        ],
+      },
+      {
+        slug: 'room-management', label: 'Room management', short: 'Rooms', icon: BedDouble, description: 'Room status, prices and maintenance.',
+        children: [
+          { slug: '', label: 'Rooms', short: 'Rooms', icon: BedDouble, description: 'Room status, prices and maintenance.' },
+          { slug: 'register', label: 'Register room', short: 'Register', icon: Plus, description: 'Add a new room to your branch.' },
+        ],
+      },
+      {
+        slug: 'extra-packages', label: 'Extra packages', short: 'Packages', icon: Package, description: 'Add-ons sold on top of a stay — spa, dining, pickups and tours.',
+        children: [
+          { slug: '', label: 'All packages', short: 'Packages', icon: Package, description: 'Extra packages guests can buy on top of their stay.' },
+          { slug: 'register', label: 'Register package', short: 'Register', icon: Plus, description: 'Add a new extra package to your branch.' },
+        ],
+      },
+      {
+        slug: 'team-shifts', label: 'Team & shifts', short: 'Team', icon: Users, description: 'Staff at your branch — register them, hand out tasks and manage shifts.',
+        children: [
+          { slug: '', label: 'Team & shifts', short: 'Team', icon: Users, description: 'Everyone allocated to your branch, plus the tasks you assign them.' },
+          { slug: 'tasks', label: 'Tasks', short: 'Tasks', icon: ListChecks, description: 'Hand out tasks to your team and track their progress.' },
+          { slug: 'register', label: 'Register employee', short: 'Register', icon: UserPlus, description: 'Add a staff member to your branch.' },
+        ],
+      },
+      {
+        slug: 'guest-history', label: 'Guest history', short: 'History', icon: UserCircle, description: 'Guest history and feedback.',
+        children: [
+          { slug: '', label: 'All clients', short: 'Clients', icon: UserCircle, description: 'Guest history and feedback.' },
+        ],
+      },
+      {
+        slug: 'referrals', label: 'Referrals', short: 'Referrals', icon: Gift, description: 'Client referrals, voucher maturity and redemptions.',
+        children: [
+          { slug: '', label: 'Referrals & vouchers', short: 'Referrals', icon: Gift, description: 'Client referrals, voucher maturity and redemptions.' },
+        ],
+      },
+      {
+        slug: 'tickets', label: 'Tickets', short: 'Tickets', icon: LifeBuoy, description: 'Register and track maintenance, housekeeping and guest tickets at this branch.',
+        children: [
+          { slug: '', label: 'All tickets', short: 'Tickets', icon: LifeBuoy, description: 'Track maintenance, housekeeping and guest tickets at this branch.' },
+          { slug: 'register', label: 'Register ticket', short: 'Register', icon: ClipboardList, description: 'Log a maintenance, housekeeping or guest ticket.' },
+        ],
+      },
+      {
+        slug: 'branch-reports', label: 'Branch results', short: 'Results', icon: FileBarChart, description: 'Branch income and occupancy.',
+        children: [
+          { slug: '', label: 'Branch results', short: 'Results', icon: FileBarChart, description: 'Branch income and occupancy.' },
+        ],
+      },
+    ],
+    accountNav: [
+      {
+        slug: 'branch-settings', label: 'Branch settings', short: 'Settings', icon: Settings, description: 'Branch details, payment methods and guest messaging.',
+        children: [
+          { slug: '', label: 'Company details', short: 'Details', icon: Building2, description: 'Branch name, contacts, location and picture.' },
+          { slug: 'theme', label: 'Company theme', short: 'Theme', icon: Palette, description: 'Pick the workspace theme each staff role sees.' },
+          { slug: 'payments', label: 'Branch payments', short: 'Payments', icon: CreditCard, description: 'Accepted payment methods and provider API keys.' },
+          { slug: 'communications', label: 'Branch communications', short: 'Comms', icon: MessageSquare, description: 'Message drafts, their triggers and channel API keys.' },
+          { slug: 'time', label: 'Branch time', short: 'Hours', icon: Clock, description: 'Opening hours and guest check-in / check-out times.' },
+        ],
+      },
     ],
   },
 
@@ -473,12 +664,71 @@ export const WORKSPACES: Record<Role, Workspace> = {
     },
     nav: [
       { ...overview("Today's arrivals, departures and guests in house."), label: 'Front desk', short: 'Front' },
-      { slug: 'check-in', label: 'Check-in / out', short: 'Check-in', icon: ConciergeBell, description: 'Check in, track your working time and check out.' },
-      { slug: 'reservations', label: 'Reservations', short: 'Reserve', icon: CalendarCheck, description: 'Take and change bookings.' },
-      { slug: 'register-client', label: 'Register client', short: 'Register', icon: UserPlus, description: 'Take a reservation or check a guest into a room.' },
-      { slug: 'guests-in-house', label: 'Guests in house', short: 'In house', icon: Users, description: 'Guest details and special requests.' },
-      { slug: 'room-availability', label: 'Room availability', short: 'Free rooms', icon: BedDouble, description: 'Which rooms are free, booked or being cleaned.' },
-      { slug: 'accounts', label: 'Accounts', short: 'Accounts', icon: Wallet, description: 'Each room\'s payments, days booked and money due.' },
+      clockInOut,
+      {
+        slug: 'register-client', label: 'Register client', short: 'Register', icon: UserPlus, description: 'Take a reservation, check a guest in or book a day rest.',
+        children: [
+          { slug: '', label: 'Reserve a room', short: 'Reserve', icon: CalendarCheck, description: 'Hold the room for a future date.' },
+          { slug: 'check-in', label: 'Check in now', short: 'Check-in', icon: BedDouble, description: 'The guest takes the room today.' },
+          { slug: 'day-rest', label: 'Day rest', short: 'Day rest', icon: Hourglass, description: 'A few hours in the room.' },
+        ],
+      },
+      {
+        slug: 'guests-in-house', label: 'Guest all transactions', short: 'All', icon: Users, description: 'In-house guests, reservations and day rests.',
+        children: [
+          { slug: '', label: 'All transactions', short: 'All', icon: Receipt, description: 'In-house guests, reservations and day rests.' },
+          { slug: 'in-house', label: 'In house', short: 'In house', icon: Users, description: 'Guests currently checked in.' },
+          { slug: 'reservations', label: 'Reservations', short: 'Reserve', icon: CalendarCheck, description: 'Take and change bookings.' },
+          { slug: 'day-rest', label: 'Day rest', short: 'Day rest', icon: Hourglass, description: 'Live day-rest sessions and recent ones.' },
+        ],
+      },
+      {
+        slug: 'clients', label: 'Clients', short: 'Clients', icon: Contact, description: 'Client profiles, stay history and payment records at this branch.',
+        children: [
+          { slug: '', label: 'All clients', short: 'Clients', icon: Contact, description: 'Client profiles, stay history and payment records at this branch.' },
+        ],
+      },
+      {
+        slug: 'referrals', label: 'Vouchers', short: 'Vouchers', icon: Gift, description: 'Client referrals, voucher maturity and gift redemptions.',
+        children: [
+          { slug: '', label: 'Vouchers', short: 'Vouchers', icon: Gift, description: 'Client referrals, voucher maturity and gift redemptions.' },
+        ],
+      },
+      {
+        slug: 'tickets', label: 'Tickets', short: 'Tickets', icon: LifeBuoy, description: 'Register and track maintenance, housekeeping and guest tickets at this branch.',
+        children: [
+          { slug: '', label: 'All tickets', short: 'Tickets', icon: LifeBuoy, description: 'Track maintenance, housekeeping and guest tickets at this branch.' },
+          { slug: 'register', label: 'Register ticket', short: 'Register', icon: ClipboardList, description: 'Log a maintenance, housekeeping or guest ticket.' },
+        ],
+      },
+      {
+        slug: 'room-availability', label: 'Room availability', short: 'Free rooms', icon: BedDouble, description: 'Which rooms are free, booked or being cleaned.',
+        children: [
+          { slug: '', label: 'Availability board', short: 'Rooms', icon: BedDouble, description: 'Which rooms are free, booked or being cleaned.' },
+        ],
+      },
+      {
+        slug: 'accounts', label: 'Accounts', short: 'Accounts', icon: Wallet, description: 'Income records, expenses, stock purchases, commissions and branch reports.',
+        children: [
+          { slug: '', label: 'Income records', short: 'Income', icon: TrendingUp, description: 'Room revenue, deposits and advance payments — filled automatically from bookings.' },
+          { slug: 'expenses', label: 'Expense', short: 'Expenses', icon: Banknote, description: 'Branch spending records — category, expense name, amount, who it went to and payment status.', register: 'Register expense' },
+          { slug: 'stock', label: 'Stock', short: 'Stock', icon: ShoppingCart, description: 'Stock bought from suppliers — supplier details, item, buying price and payment status.', register: 'Buy stock' },
+          { slug: 'counter', label: 'Counter', short: 'Counter', icon: Calculator, description: 'Open and close the till, register drawings and review till reports.' },
+          { slug: 'drawings', label: 'Drawings', short: 'Drawings', icon: ArrowDownToLine, description: 'Money drawn from the till — cash, M-Pesa or Visa card.', register: 'Register drawing' },
+          { slug: 'commissions', label: 'Commissions & gifts', short: 'Gifts', icon: Gift, description: 'Referral gift vouchers and commissions — generated automatically.' },
+        ],
+      },
+      {
+        slug: 'reports', label: 'Reports', short: 'Reports', icon: BarChart3, description: 'Money flow, cash, room, client, referral and package reports.',
+        children: [
+          { slug: '', label: 'General money flow report', short: 'Money flow', icon: ArrowLeftRight, description: 'Money in and out across all channels — the branch net position for any period.' },
+          { slug: 'cash', label: 'Cash summary report', short: 'Cash report', icon: FileBarChart, description: 'Shift cash summary — room ledger plus M-Pesa, cash and Visa summaries.' },
+          { slug: 'rooms', label: 'Room summary report', short: 'Room report', icon: BedDouble, description: 'Per-room stays, nights and revenue for any period.' },
+          { slug: 'clients', label: 'Client summary report', short: 'Client report', icon: Users, description: 'Per-client stays, spend, vouchers and extra packages.' },
+          { slug: 'referrals', label: 'Referral summary report', short: 'Referral report', icon: Gift, description: 'Gift vouchers earned, matured and redeemed.' },
+          { slug: 'packages', label: 'Extra packages report', short: 'Package report', icon: PackageSearch, description: 'Extra package sales by item, guest and period.' },
+        ],
+      },
     ],
   },
 
@@ -517,11 +767,46 @@ export const WORKSPACES: Record<Role, Workspace> = {
     },
     nav: [
       { ...overview('Your tasks and schedule for today.'), label: 'My day', short: 'Today' },
-      { slug: 'tasks', label: 'My tasks', short: 'Tasks', icon: ListChecks, description: 'Jobs assigned to you today.' },
-      { slug: 'room-status', label: 'Room status', short: 'Status', icon: Sparkles, description: 'Mark rooms as cleaned and ready.' },
-      { slug: 'schedule', label: 'My schedule', short: 'Schedule', icon: CalendarDays, description: 'Your shifts for the week.' },
-      { slug: 'report-issue', label: 'Report an issue', short: 'Issues', icon: LifeBuoy, description: 'Report a problem or ask for supplies.' },
-      { slug: 'checklist', label: 'Checklists', short: 'Checks', icon: ClipboardCheck, description: 'Step-by-step room and safety checks.' },
+      clockInOut,
+      {
+        slug: 'tasks', label: 'My tasks', short: 'Tasks', icon: ListChecks, description: 'Jobs assigned to you today.',
+        children: [
+          { slug: '', label: 'My tasks', short: 'Tasks', icon: ListChecks, description: 'Jobs assigned to you today.' },
+        ],
+      },
+      {
+        slug: 'room-status', label: 'Room status', short: 'Status', icon: Sparkles, description: 'Mark rooms as cleaned and ready.',
+        children: [
+          { slug: '', label: 'Room status', short: 'Status', icon: Sparkles, description: 'Mark rooms as cleaned and ready.' },
+        ],
+      },
+      {
+        slug: 'schedule', label: 'My schedule', short: 'Schedule', icon: CalendarDays, description: 'Your shifts for the week.',
+        children: [
+          { slug: '', label: 'My schedule', short: 'Schedule', icon: CalendarDays, description: 'Your shifts for the week.' },
+        ],
+      },
+      {
+        slug: 'report-issue', label: 'Report an issue', short: 'Issues', icon: LifeBuoy, description: 'Report a problem or ask for supplies.',
+        children: [
+          { slug: '', label: 'Report issue', short: 'Issues', icon: LifeBuoy, description: 'Report a problem or ask for supplies.' },
+        ],
+      },
+      {
+        slug: 'checklist', label: 'Checklists', short: 'Checks', icon: ClipboardCheck, description: 'Step-by-step room and safety checks.',
+        children: [
+          { slug: '', label: 'Checklists', short: 'Checks', icon: ClipboardCheck, description: 'Step-by-step room and safety checks.' },
+        ],
+      },
     ],
   },
 }
+
+/** Every workspace theme by display name — used when a branch overrides the
+ *  theme a role signs in with (Branch settings → Company theme). */
+export const THEMES: Record<string, WorkspaceTheme> = Object.fromEntries(
+  Object.values(WORKSPACES).map((w) => [w.theme.name, w.theme]),
+)
+
+/** The theme names a branch manager can assign to each staff role. */
+export const THEME_NAMES = Object.values(WORKSPACES).map((w) => w.theme.name)

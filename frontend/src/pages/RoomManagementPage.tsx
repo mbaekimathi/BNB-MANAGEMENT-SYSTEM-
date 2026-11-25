@@ -1,7 +1,8 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { Ban, BedDouble, Building2, CircleCheck, ImagePlus, Loader2, Pencil, Plus, Search, Star, Trash2, Users, Wrench, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { Button, Empty, ErrorNote, Flash, Input, Loading, PageHeader, Panel, Pill, Row, Select, Stat, type Tone } from '../components/hr/ui'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { Button, Empty, ErrorNote, Flash, Input, Loading, PageHeader, Panel, Pill, Select, Stat, type Tone } from '../components/hr/ui'
 import { parseApiError, type Employee, type FieldErrors } from '../lib/api'
 import { bnb, ROOM_TYPES, SUSPEND_REASONS, type Room, type RoomEdit, type RoomPhoto, type RoomStatus, type RoomType } from '../lib/bnb'
 import { formatMoney, useApi } from '../lib/hr'
@@ -13,7 +14,7 @@ const MAX_PHOTOS = 8
 
 const blank = { name: '', room_type: 'double' as RoomType, capacity: '2', price: '', description: '' }
 
-export default function RoomManagementPage({ item, t, me }: { item: NavItem; t: WorkspaceTheme; me: Employee }) {
+export default function RoomManagementPage({ item, t, me, view = 'list' }: { item: NavItem; t: WorkspaceTheme; me: Employee; view?: 'list' | 'register' }) {
   const { data, error, loading, reload, setData } = useApi(bnb.rooms)
   const [q, setQ] = useState('')
   const [editing, setEditing] = useState<Room | null>(null)
@@ -22,6 +23,12 @@ export default function RoomManagementPage({ item, t, me }: { item: NavItem; t: 
   const [suspending, setSuspending] = useState<Room | null>(null)
   const [busy, setBusy] = useState(0)
   const [flash, setFlash] = useState({ text: '', bad: false })
+  const navigate = useNavigate()
+  const { pathname } = useLocation()
+
+  /** Register is a dialog over this list — the /register URL opens it, closing returns here. */
+  const listPath = pathname.replace(/\/register$/, '')
+  const editingRoom = view === 'register' ? null : editing
 
   const rooms = useMemo(
     () => (data ?? []).filter((r) => !q || `${r.name} ${r.type_label}`.toLowerCase().includes(q.toLowerCase())),
@@ -30,6 +37,7 @@ export default function RoomManagementPage({ item, t, me }: { item: NavItem; t: 
   const active = data?.filter((r) => r.status === 'active').length ?? 0
   const maintenance = data?.filter((r) => r.status === 'maintenance').length ?? 0
   const suspended = data?.filter((r) => r.status === 'suspended').length ?? 0
+  const th = `px-3 py-2.5 text-left text-[11px] font-medium uppercase tracking-wider ${t.muted}`
 
   async function toggleStatus(r: Room) {
     if (r.status !== 'suspended') return setSuspending(r)
@@ -55,7 +63,7 @@ export default function RoomManagementPage({ item, t, me }: { item: NavItem; t: 
         text={item.description}
         actions={
           me.branch ? (
-            <Button t={t} onClick={() => { setEditing(null); setFormOpen(true) }}>
+            <Button t={t} onClick={() => { setEditing(null); navigate(`${listPath}/register`) }}>
               <Plus className="size-3.5" /> Register room
             </Button>
           ) : undefined
@@ -103,67 +111,89 @@ export default function RoomManagementPage({ item, t, me }: { item: NavItem; t: 
                 text={data?.length ? 'Try a different search.' : 'Use the Register room button to add your first room.'}
               />
             ) : (
-              <ul className="space-y-2">
-                <AnimatePresence initial={false}>
-                  {rooms.map((r, i) => (
-                    <Row key={r.id} t={t} i={i}>
-                      <div className={`flex min-w-0 flex-1 items-center gap-3 ${r.status === 'suspended' ? 'opacity-55' : ''}`}>
-                        <span className={`relative grid size-11 shrink-0 place-items-center overflow-hidden ${t.radius} ${t.iconBox}`}>
-                          {r.photo ? <img src={r.photo} alt="" className="size-full object-cover" /> : <BedDouble className="size-5" />}
-                          {r.photos.length > 1 && (
-                            <span className="absolute bottom-0.5 right-0.5 rounded-full bg-black/65 px-1.5 py-px text-[9px] font-semibold leading-tight text-white">
-                              {r.photos.length}
-                            </span>
-                          )}
-                        </span>
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold">{r.name}</p>
-                          <p className={`truncate text-xs ${t.muted}`}>
-                            {r.type_label} · <Users className="mr-0.5 inline size-3" />{r.capacity} {r.capacity === 1 ? 'guest' : 'guests'}
-                          </p>
-                          {r.status_reason && r.status !== 'active' && (
-                            <p className={`truncate text-[11px] ${r.status === 'suspended' ? 'text-rose-500' : 'text-amber-600 dark:text-amber-300'}`}>
-                              {r.status_reason}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      <div className={`min-w-0 text-xs sm:w-40 ${t.muted}`}>
-                        <p className="truncate font-medium text-inherit">{formatMoney(r.price)}<span className={t.muted}> / night</span></p>
-                        {r.description && <p className="truncate">{r.description}</p>}
-                      </div>
-                      <div className="flex items-center justify-between gap-2 sm:justify-end">
-                        <Pill tone={ROOM_TONE[r.status]}>{r.status_label}</Pill>
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button" aria-label={`Edit ${r.name}`} title="Edit"
-                            onClick={() => { setEditing(r); setFormOpen(true) }}
-                            className={`grid size-8 place-items-center ${t.radius} ${t.muted} hover:text-sky-500`}
-                          >
-                            <Pencil className="size-4" />
-                          </button>
-                          <button
-                            type="button"
-                            aria-label={`${r.status === 'suspended' ? 'Activate' : 'Suspend'} ${r.name}`}
-                            title={r.status === 'suspended' ? 'Activate' : 'Suspend'}
-                            disabled={busy === r.id} onClick={() => void toggleStatus(r)}
-                            className={`grid size-8 place-items-center ${t.radius} ${t.muted} disabled:opacity-40 ${r.status === 'suspended' ? 'hover:text-emerald-500' : 'hover:text-amber-500'}`}
-                          >
-                            {busy === r.id ? <Loader2 className="size-4 animate-spin" /> : r.status === 'suspended' ? <CircleCheck className="size-4" /> : <Ban className="size-4" />}
-                          </button>
-                          <button
-                            type="button" aria-label={`Delete ${r.name}`} title="Delete"
-                            onClick={() => setDeleting(r)}
-                            className={`grid size-8 place-items-center ${t.radius} ${t.muted} hover:text-rose-500`}
-                          >
-                            <Trash2 className="size-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </Row>
-                  ))}
-                </AnimatePresence>
-              </ul>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[60rem] table-fixed border-collapse">
+                  <thead>
+                    <tr className={`border-b ${t.sidebarDivider}`}>
+                      <th className={th}>Room</th>
+                      <th className={`w-32 ${th}`}>Type</th>
+                      <th className={`w-28 ${th}`}>Capacity</th>
+                      <th className={`w-28 ${th}`}>Price / night</th>
+                      <th className={`w-28 ${th}`}>Status</th>
+                      <th className={`w-48 ${th}`}>Notes</th>
+                      <th className={`w-28 ${th} text-right`}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <AnimatePresence initial={false}>
+                      {rooms.map((r, i) => (
+                        <motion.tr
+                          key={r.id}
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ delay: Math.min(i, 10) * 0.03, duration: 0.25 }}
+                          className={`border-b last:border-b-0 ${t.sidebarDivider} ${r.status === 'suspended' ? 'opacity-55' : ''}`}
+                        >
+                          <td className="max-w-0 px-3 py-3">
+                            <div className="flex min-w-0 items-center gap-3">
+                              <span className={`relative grid size-11 shrink-0 place-items-center overflow-hidden ${t.radius} ${t.iconBox}`}>
+                                {r.photo ? <img src={r.photo} alt="" className="size-full object-cover" /> : <BedDouble className="size-5" />}
+                                {r.photos.length > 1 && (
+                                  <span className="absolute bottom-0.5 right-0.5 rounded-full bg-black/65 px-1.5 py-px text-[9px] font-semibold leading-tight text-white">
+                                    {r.photos.length}
+                                  </span>
+                                )}
+                              </span>
+                              <p className="truncate text-sm font-semibold">{r.name}</p>
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 text-xs">{r.type_label}</td>
+                          <td className="whitespace-nowrap px-3 py-3 text-xs">
+                            <Users className="mr-1 inline size-3" />{r.capacity} {r.capacity === 1 ? 'guest' : 'guests'}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-3 text-xs font-medium">{formatMoney(r.price)}</td>
+                          <td className="px-3 py-3"><Pill tone={ROOM_TONE[r.status]}>{r.status_label}</Pill></td>
+                          <td className="px-3 py-3 text-xs">
+                            {r.status_reason && r.status !== 'active' ? (
+                              <p className={`truncate ${r.status === 'suspended' ? 'text-rose-500' : 'text-amber-600 dark:text-amber-300'}`}>{r.status_reason}</p>
+                            ) : (
+                              <p className={`truncate ${t.muted}`}>{r.description || '—'}</p>
+                            )}
+                          </td>
+                          <td className="px-3 py-3">
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                type="button" aria-label={`Edit ${r.name}`} title="Edit"
+                                onClick={() => { setEditing(r); setFormOpen(true) }}
+                                className={`grid size-8 place-items-center ${t.radius} ${t.muted} hover:text-sky-500`}
+                              >
+                                <Pencil className="size-4" />
+                              </button>
+                              <button
+                                type="button"
+                                aria-label={`${r.status === 'suspended' ? 'Activate' : 'Suspend'} ${r.name}`}
+                                title={r.status === 'suspended' ? 'Activate' : 'Suspend'}
+                                disabled={busy === r.id} onClick={() => void toggleStatus(r)}
+                                className={`grid size-8 place-items-center ${t.radius} ${t.muted} disabled:opacity-40 ${r.status === 'suspended' ? 'hover:text-emerald-500' : 'hover:text-amber-500'}`}
+                              >
+                                {busy === r.id ? <Loader2 className="size-4 animate-spin" /> : r.status === 'suspended' ? <CircleCheck className="size-4" /> : <Ban className="size-4" />}
+                              </button>
+                              <button
+                                type="button" aria-label={`Delete ${r.name}`} title="Delete"
+                                onClick={() => setDeleting(r)}
+                                className={`grid size-8 place-items-center ${t.radius} ${t.muted} hover:text-rose-500`}
+                              >
+                                <Trash2 className="size-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </motion.tr>
+                      ))}
+                    </AnimatePresence>
+                  </tbody>
+                </table>
+              </div>
             )}
           </Panel>
         </>
@@ -171,14 +201,19 @@ export default function RoomManagementPage({ item, t, me }: { item: NavItem; t: 
 
       <RoomForm
         t={t}
-        open={formOpen}
-        editing={editing}
-        onClose={() => { setFormOpen(false); setEditing(null) }}
-        onSaved={(r) => {
-          setData((l) => (editing ? (l?.map((x) => (x.id === r.id ? r : x)) ?? null) : [...(l ?? []), r].sort((a, b) => a.name.localeCompare(b.name))))
+        open={formOpen || view === 'register'}
+        editing={editingRoom}
+        onClose={() => {
           setFormOpen(false)
           setEditing(null)
-          setFlash({ text: editing ? `${r.name} was updated.` : `${r.name} was registered.`, bad: false })
+          if (view === 'register') navigate(listPath)
+        }}
+        onSaved={(r) => {
+          setData((l) => (editingRoom ? (l?.map((x) => (x.id === r.id ? r : x)) ?? null) : [...(l ?? []), r].sort((a, b) => a.name.localeCompare(b.name))))
+          setFormOpen(false)
+          setEditing(null)
+          if (view === 'register') navigate(listPath)
+          setFlash({ text: editingRoom ? `${r.name} was updated.` : `${r.name} was registered.`, bad: false })
         }}
       />
       <ConfirmDelete t={t} room={deleting} onClose={() => setDeleting(null)} onDeleted={(id) => setData((l) => l?.filter((x) => x.id !== id) ?? null)} />

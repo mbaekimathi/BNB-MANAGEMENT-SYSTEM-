@@ -1,11 +1,11 @@
 from django.contrib import admin
 
-from .models import Attendance, LeaveRequest, PayrollEntry
+from .models import Attendance, LeaveRequest, PayrollEntry, TaskAssignment, TaskType
 
 
 @admin.register(Attendance)
 class AttendanceAdmin(admin.ModelAdmin):
-    list_display = ("employee", "date", "status", "clock_in", "clock_out")
+    list_display = ("employee", "date", "status", "clock_in", "clock_out", "system_clock_out")
     list_filter = ("status", "date")
 
 
@@ -19,3 +19,15 @@ class LeaveRequestAdmin(admin.ModelAdmin):
 class PayrollEntryAdmin(admin.ModelAdmin):
     list_display = ("employee", "period", "basic_salary", "allowances", "deductions", "status")
     list_filter = ("status", "period")
+
+
+@admin.register(TaskType)
+class TaskTypeAdmin(admin.ModelAdmin):
+    list_display = ("name", "branch", "created_at")
+    list_filter = ("branch",)
+
+
+@admin.register(TaskAssignment)
+class TaskAssignmentAdmin(admin.ModelAdmin):
+    list_display = ("task_type", "employee", "branch", "date", "status")
+    list_filter = ("status", "branch", "date")

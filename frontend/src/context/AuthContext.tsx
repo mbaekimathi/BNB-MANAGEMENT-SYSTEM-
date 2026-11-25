@@ -7,6 +7,8 @@ interface AuthState {
   login: (code: string, password: string, remember: boolean) => Promise<Employee>
   signup: (payload: SignupPayload) => Promise<{ message: string; user: Employee }>
   logout: () => Promise<void>
+  /** Re-fetch /auth/me/ — e.g. after branch settings change the user's theme pick. */
+  reload: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthState | null>(null)
@@ -49,7 +51,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (refresh) await api.post('/auth/logout/', { refresh }).catch(() => undefined)
   }, [])
 
-  const value = useMemo(() => ({ user, loading, login, signup, logout }), [user, loading, login, signup, logout])
+  const reload = useCallback(async () => {
+    const { data } = await api.get<Employee>('/auth/me/')
+    setUser(data)
+  }, [])
+
+  const value = useMemo(() => ({ user, loading, login, signup, logout, reload }), [user, loading, login, signup, logout, reload])
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 

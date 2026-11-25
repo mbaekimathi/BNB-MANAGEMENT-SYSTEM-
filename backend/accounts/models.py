@@ -78,6 +78,10 @@ class User(AbstractUser):
 
     class Meta:
         ordering = ["-created_at"]
+        indexes = [
+            # Staff lists filter on status (pending/active) and role.
+            models.Index(fields=["status", "role"], name="user_status_role"),
+        ]
 
     def __str__(self):
         return f"{self.get_full_name() or self.email} ({self.code})"

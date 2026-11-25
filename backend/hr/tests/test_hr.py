@@ -4,6 +4,7 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from accounts.models import User
+from bnb.models import Branch
 from hr.models import Attendance, LeaveRequest, PayrollEntry
 
 
@@ -37,7 +38,14 @@ class HRApiTests(APITestCase):
         self.assertEqual([u["code"] for u in self.client.get("/api/hr/employees/?status=pending").json()], ["300300"])
 
     def test_activate_with_role_and_suspend(self):
-        r = self.client.post(f"/api/hr/employees/{self.pending.id}/activate/", {"role": "branch_receptionist"})
+        branch = Branch.objects.create(
+            name="Branch 900900", phone="0700000000", email="branch900900@x.test",
+            location="Test town", code="900900", password="x",
+        )
+        r = self.client.post(
+            f"/api/hr/employees/{self.pending.id}/activate/",
+            {"role": "branch_receptionist", "branch": branch.id},
+        )
         self.assertEqual(r.status_code, 200, r.content)
         self.pending.refresh_from_db()
         self.assertEqual((self.pending.status, self.pending.role), ("active", "branch_receptionist"))

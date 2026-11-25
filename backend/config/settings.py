@@ -74,6 +74,9 @@ DATABASES = {
         "PASSWORD": os.getenv("DB_PASSWORD", ""),
         "HOST": os.getenv("DB_HOST", "127.0.0.1"),
         "PORT": os.getenv("DB_PORT", "3306"),
+        # Reuse the MySQL connection between requests instead of paying a fresh
+        # TCP+auth handshake on every API call.
+        "CONN_MAX_AGE": int(os.getenv("DB_CONN_MAX_AGE", "60")),
         "OPTIONS": {
             "charset": "utf8mb4",
             "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
@@ -111,9 +114,13 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_THROTTLE_CLASSES": [
         "rest_framework.throttling.ScopedRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {
         "auth": "20/min",
+        # Safety net — well above real UI traffic, stops runaway scripts from
+        # hammering the API; per-user (per-IP for anonymous calls).
+        "user": "300/min",
     },
 }
 
@@ -123,7 +130,9 @@ SIMPLE_JWT = {
     "REMEMBER_ME_REFRESH_LIFETIME": timedelta(days=30),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
-    "UPDATE_LAST_LOGIN": True,
+    # LoginView already stamps last_login itself — avoid a DB write on every
+    # silent token refresh (every 30 min per active user).
+    "UPDATE_LAST_LOGIN": False,
 }
 
 CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")

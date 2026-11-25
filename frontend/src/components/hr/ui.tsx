@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { AlertTriangle, Inbox, Loader2, type LucideIcon } from 'lucide-react'
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react'
+import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from 'react'
+import { Link, type LinkProps } from 'react-router-dom'
 import type { Employee } from '../../lib/api'
 import type { EmployeeBrief } from '../../lib/hr'
 import type { WorkspaceTheme } from '../../lib/workspaces'
@@ -46,7 +47,7 @@ export function Stat({ t, icon: Icon, label, value, hint, i = 0 }: T & { icon: L
       initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.05 * i, duration: 0.35 }}
-      className={`flex items-center gap-4 p-4 ${t.radius} ${t.card}`}
+      className={`stat-card flex items-center gap-4 p-4 ${t.radius} ${t.card}`}
     >
       <span className={`grid size-11 shrink-0 place-items-center ${t.radius} ${t.iconBox}`}>
         <Icon className="size-5" />
@@ -93,6 +94,18 @@ export function Button({ t, variant = 'primary', busy, children, className = '',
   )
 }
 
+/** A router Link styled like the ghost Button — for actions that navigate. */
+export function LinkButton({ t, children, className = '', ...props }: T & LinkProps & { children: ReactNode }) {
+  return (
+    <Link
+      className={`inline-flex h-9 items-center justify-center gap-1.5 px-3.5 text-xs font-semibold transition hover:brightness-95 dark:hover:brightness-125 ${t.radius} ${t.chip} ${className}`}
+      {...props}
+    >
+      {children}
+    </Link>
+  )
+}
+
 const control = (t: WorkspaceTheme) =>
   `h-10 w-full min-w-0 bg-transparent px-3 text-sm outline-none transition focus:ring-2 ${t.radius} ${t.chip} ${t.ring}`
 
@@ -101,6 +114,16 @@ export function Input({ t, label, error, ...props }: T & InputHTMLAttributes<HTM
     <label className="flex min-w-0 flex-col gap-1">
       {label && <span className={`text-[11px] font-medium ${t.muted}`}>{label}</span>}
       <input className={`${control(t)} ${error ? 'ring-1 ring-rose-500/60' : ''} [color-scheme:light] dark:[color-scheme:dark]`} {...props} />
+      {error && <span className="text-[11px] text-rose-500">{error}</span>}
+    </label>
+  )
+}
+
+export function Textarea({ t, label, error, ...props }: T & TextareaHTMLAttributes<HTMLTextAreaElement> & { label?: string; error?: string }) {
+  return (
+    <label className="flex min-w-0 flex-col gap-1">
+      {label && <span className={`text-[11px] font-medium ${t.muted}`}>{label}</span>}
+      <textarea className={`min-h-20 w-full min-w-0 bg-transparent px-3 py-2 text-sm outline-none transition focus:ring-2 ${t.radius} ${t.chip} ${t.ring} ${error ? 'ring-1 ring-rose-500/60' : ''}`} {...props} />
       {error && <span className="text-[11px] text-rose-500">{error}</span>}
     </label>
   )
@@ -122,7 +145,12 @@ export function Loading({ t, rows = 4 }: T & { rows?: number }) {
   return (
     <div className="space-y-2" aria-busy>
       {Array.from({ length: rows }, (_, i) => (
-        <div key={i} className={`h-14 animate-pulse ${t.radius} ${t.chip} opacity-60`} />
+        <div key={i} className={`relative h-14 overflow-hidden ${t.radius} ${t.chip} opacity-70`}>
+          <div
+            className="absolute inset-0 animate-shimmer bg-[linear-gradient(100deg,transparent_25%,rgba(255,255,255,0.55)_50%,transparent_75%)] bg-[length:220%_100%] dark:bg-[linear-gradient(100deg,transparent_25%,rgba(255,255,255,0.09)_50%,transparent_75%)]"
+            style={{ animationDelay: `${i * 140}ms` }}
+          />
+        </div>
       ))}
     </div>
   )
