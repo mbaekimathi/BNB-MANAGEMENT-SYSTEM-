@@ -89,7 +89,7 @@ export interface MessageDraft {
 export type BranchProfileEdit = Partial<Omit<BranchProfile, 'id' | 'code' | 'status' | 'status_label' | 'updated_at'>>
 
 export type RoomStatus = 'active' | 'maintenance' | 'suspended'
-export type RoomType = 'single' | 'double' | 'twin' | 'queen' | 'king' | 'suite' | 'family'
+export type RoomType = 'single' | 'double' | 'twin' | 'queen' | 'king' | 'deluxe' | 'executive' | 'suite' | 'family'
 
 export interface RoomPhoto {
   id: number
@@ -107,6 +107,10 @@ export interface Room {
   type_label: string
   capacity: number
   price: string
+  /** Flat day-rest rate; null falls back to `price`. */
+  day_rest_price: string | null
+  /** Commission this room pays out on a booking; null means none. */
+  commission: string | null
   description: string
   status: RoomStatus
   status_label: string
@@ -122,6 +126,8 @@ export interface RoomRegister {
   room_type: RoomType
   capacity: number
   price: string
+  day_rest_price?: string | null
+  commission?: string | null
   description: string
 }
 
@@ -188,6 +194,8 @@ export interface BookingPayment {
   method_label: string
   receipt_number: string
   reference: string
+  /** When the money actually moved — null means it was paid as it was recorded. */
+  paid_at: string | null
   created_at: string
 }
 
@@ -197,6 +205,8 @@ export interface BookingPaymentRegister {
   amount: number
   method: PaymentMethod
   reference?: string
+  /** When the money actually moved — optional, defaults to the record time. */
+  paid_at?: string | null
 }
 
 /** An extra package picked for a guest on a booking — the catalogue name and
@@ -330,10 +340,25 @@ export interface RoomChangeResult {
 }
 
 /** A top-up on a live stay — `extend_nights` also buys extra nights on the same room. */
+/** What happens to money already collected when a booking is cancelled. */
+export type CancelSettle = 'keep' | 'refund' | 'voucher'
+
+export interface CancelRequest {
+  /** 'refund' hands the paid balance back through `method` (needs an open
+   *  till), 'voucher' issues a redeemable credit voucher; 'keep' leaves the
+   *  money on record as a refund due. */
+  settle?: CancelSettle
+  /** The channel a refund leaves through. */
+  method?: PaymentMethod
+  reference?: string
+}
+
 export interface PayRequest {
   amount: number
   method: PaymentMethod
   reference?: string
+  /** When the money actually moved — optional, defaults to the record time. */
+  paid_at?: string | null
   /** Push checkout out by this many nights — the room must stay free past checkout. */
   extend_nights?: number
 }
@@ -596,6 +621,10 @@ export interface ClientRow {
   last_visit: string
   since: string
   in_house: boolean
+  /** Any booking still awaiting check-in. */
+  has_reservation: boolean
+  /** Any non-cancelled day-rest booking — live sessions and past ones. */
+  has_day_rest: boolean
   /** Any booking overlapping the requested range, and stays among them. */
   in_range: boolean
   visits: number
@@ -849,6 +878,8 @@ export const ROOM_TYPES: { value: RoomType; label: string }[] = [
   { value: 'twin', label: 'Twin' },
   { value: 'queen', label: 'Queen' },
   { value: 'king', label: 'King' },
+  { value: 'deluxe', label: 'Deluxe' },
+  { value: 'executive', label: 'Executive' },
   { value: 'suite', label: 'Suite' },
   { value: 'family', label: 'Family' },
 ]
@@ -941,7 +972,8 @@ export const bnb = {
   registerBooking: (data: BookingRegister) => api.post<Booking>('/bnb/bookings/', data).then((r) => r.data),
   checkinBooking: (id: number) => api.post<Booking>(`/bnb/bookings/${id}/checkin/`).then((r) => r.data),
   checkoutBooking: (id: number) => api.post<Booking>(`/bnb/bookings/${id}/checkout/`).then((r) => r.data),
-  cancelBooking: (id: number) => api.post<Booking>(`/bnb/bookings/${id}/cancel/`).then((r) => r.data),
+  cancelBooking: (id: number, data?: CancelRequest) =>
+    api.post<Booking>(`/bnb/bookings/${id}/cancel/`, data).then((r) => r.data),
   /** Move a live stay to another room — `option` settles the price difference on the unused nights. */
   changeRoom: (id: number, data: RoomChangeRequest) =>
     api.post<RoomChangeResult>(`/bnb/bookings/${id}/change-room/`, data).then((r) => r.data),
@@ -994,7 +1026,11 @@ export const bnb = {
   updatePurchase: (id: number, data: StockPurchaseEdit) => api.patch<StockPurchase>(`/bnb/stock-purchases/${id}/`, data).then((r) => r.data),
   deletePurchase: (id: number) => api.delete(`/bnb/stock-purchases/${id}/`),
 
-  tills: share(() => api.get<TillSession[]>('/bnb/tills/').then((r) => r.data)),
+  /** `open: '1'` returns just the live session — the popups that only check
+   *  the till gate skip the whole session history this way. */
+  tills: share((params: { open?: '1'; limit?: number } = {}) =>
+    api.get<TillSession[]>('/bnb/tills/', { params }).then((r) => r.data),
+  ),
   /** Open the counter till with a starting float. */
   openTill: (data: TillOpen) => api.post<TillSession>('/bnb/tills/open/', data).then((r) => r.data),
   /** Close the till with the cash counted in the drawer. */

@@ -135,6 +135,11 @@ export interface MemberSignup {
   confirm_password: string
 }
 
+/** HR staff register an employee directly — `branch` is required for branch roles. */
+export interface EmployeeSignup extends MemberSignup {
+  branch?: number | null
+}
+
 /** Sends employee fields as multipart form data, attaching `photo` when it's a File. */
 function memberForm(data: Record<string, unknown>, photo?: File | null) {
   const form = new FormData()
@@ -146,6 +151,12 @@ function memberForm(data: Record<string, unknown>, photo?: File | null) {
 export const hr = {
   summary: share(() => api.get<HRSummary>('/hr/summary/').then((r) => r.data)),
   employees: share((params: Record<string, string> = {}) => api.get<Employee[]>('/hr/employees/', { params }).then((r) => r.data)),
+  createEmployee: (data: EmployeeSignup, photo?: File | null) =>
+    api.post<Employee>('/hr/employees/', memberForm({ ...data }, photo), { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
+  checkEmployeeCode: (code: string) =>
+    api.get<{ code: string; available: boolean }>('/hr/employees/code-check/', { params: { code } }).then((r) => r.data),
+  checkEmployeeEmail: (email: string) =>
+    api.get<{ email: string; available: boolean }>('/hr/employees/email-check/', { params: { email } }).then((r) => r.data),
   employeeChoices: share(() => api.get<EmployeeBrief[]>('/hr/employees/choices/').then((r) => r.data)),
   /** `photo`: a File replaces the picture, `null` removes it, `undefined` keeps it. */
   updateEmployee: (id: number, data: EmployeeEdit, photo?: File | null) => {
@@ -171,7 +182,8 @@ export const hr = {
     }
     return api.patch<Employee>(`/hr/team/${id}/`, photo === null ? { ...data, photo: null } : data).then((r) => r.data)
   },
-  activateMember: (id: number) => api.post<Employee>(`/hr/team/${id}/activate/`).then((r) => r.data),
+  activateMember: (id: number, role?: Role) =>
+    api.post<Employee>(`/hr/team/${id}/activate/`, { role }).then((r) => r.data),
   suspendMember: (id: number) => api.post<Employee>(`/hr/team/${id}/suspend/`).then((r) => r.data),
   deleteMember: (id: number) => api.delete(`/hr/team/${id}/`),
 

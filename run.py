@@ -10,9 +10,13 @@ import hashlib
 import os
 import secrets
 import shutil
+import signal
+import socket
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 import venv
 import webbrowser
 from pathlib import Path
@@ -169,18 +173,79 @@ def setup_frontend():
     return npm
 
 
+def port_free(port):
+    with socket.socket() as s:
+        s.settimeout(1)
+        return s.connect_ex(("127.0.0.1", port)) != 0
+
+
+def backend_up():
+    """Our API answers 401 to an unauthenticated /auth/me/ — anything else isn't it."""
+    try:
+        urllib.request.urlopen("http://127.0.0.1:8000/api/auth/me/", timeout=2)
+    except urllib.error.HTTPError as e:
+        return e.code == 401
+    except OSError:
+        return False
+    return False
+
+
+def frontend_up():
+    try:
+        html = urllib.request.urlopen(FRONTEND_URL, timeout=2).read().decode("utf-8", "ignore")
+        return "Haven Stays" in html
+    except OSError:
+        return False
+
+
+def spawn(cmd, cwd):
+    # POSIX: new process group so stop_tree can signal the whole family at once.
+    kw = {"start_new_session": True} if not IS_WINDOWS else {}
+    return subprocess.Popen(cmd, cwd=cwd, **kw)
+
+
+def stop_tree(p):
+    """Kill the process and its children — `npm run dev` and runserver each
+    spawn a child that would otherwise keep holding the port after we exit."""
+    if IS_WINDOWS:
+        subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], capture_output=True)
+    else:
+        try:
+            os.killpg(os.getpgid(p.pid), signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+
+
 def start(npm):
     step("Starting servers")
-    procs = [
-        subprocess.Popen([str(VENV_PY), "manage.py", "runserver", "127.0.0.1:8000"], cwd=BACKEND),
-        subprocess.Popen([npm, "run", "dev", "--", "--port", "5173", "--strictPort"], cwd=FRONTEND),
-    ]
-    time.sleep(4)
+    backend, frontend = backend_up(), frontend_up()
+    if not backend and not port_free(8000):
+        fail("Port 8000 is in use by another app — close it, then run this again.")
+    if not frontend and not port_free(5173):
+        fail("Port 5173 is in use by another app — close it, then run this again.")
+
+    procs = []
+    if backend:
+        print("Backend already running on :8000 — leaving it as is.")
+    else:
+        procs.append(spawn([str(VENV_PY), "manage.py", "runserver", "127.0.0.1:8000"], BACKEND))
+    if frontend:
+        print("Frontend already running on :5173 — leaving it as is.")
+    else:
+        procs.append(spawn([npm, "run", "dev", "--", "--port", "5173", "--strictPort"], FRONTEND))
+
+    if procs:
+        time.sleep(4)
+        if any(p.poll() is not None for p in procs):
+            fail("A server failed to start — see its output above.")
+
     print(f"\n\033[1;32mBnB system is running:\033[0m")
     print(f"  Employee login : {FRONTEND_URL}/login")
     print("  Admin (approve staff): http://127.0.0.1:8000/admin")
-    print("Press Ctrl+C to stop.\n")
     webbrowser.open(f"{FRONTEND_URL}/login")
+    if not procs:
+        return  # Both were already up — nothing here to babysit.
+    print("Press Ctrl+C to stop.\n")
     try:
         while all(p.poll() is None for p in procs):
             time.sleep(1)
@@ -189,7 +254,7 @@ def start(npm):
     finally:
         for p in procs:
             if p.poll() is None:
-                p.terminate()
+                stop_tree(p)
         for p in procs:
             try:
                 p.wait(timeout=10)

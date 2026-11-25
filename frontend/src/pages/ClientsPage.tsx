@@ -3,19 +3,19 @@ import {
   ArrowLeft, ArrowLeftRight, ArrowUpRight, Ban, Banknote, BedDouble, Building2, CalendarClock,
   CalendarMinus, CalendarPlus, Check, ChevronDown, Contact, Ellipsis, Globe, History, IdCard,
   LogOut, Mail, MessageSquare, Minus, Moon, Package, PackagePlus, Pencil, Phone, Plus, Receipt,
-  RefreshCw, Search, Ticket, Users, Wallet, X,
+  RefreshCw, Search, Ticket, TrendingDown, TrendingUp, Users, Wallet, X,
   type LucideIcon,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { Button, Empty, ErrorNote, Flash, Input, Loading, PageHeader, Panel, Pill, Select, Stat, Textarea, type Tone } from '../components/hr/ui'
 import { PhoneInput } from '../components/hr/PhoneInput'
 import { parseApiError, type Employee } from '../lib/api'
 import {
   GUEST_ID_TYPES, PAYMENT_METHODS, bnb, stayLength,
-  type AddPackageResult, type Booking, type BookingStatus, type ClientProfileResult,
+  type AddPackageResult, type Booking, type BookingStatus, type CancelSettle, type ClientProfileResult,
   type ClientRow, type ExtraPackage, type GuestIdType, type PaymentMethod, type PayResult,
-  type Room, type RoomChangeOption, type RoomChangeResult,
+  type Room, type RoomChangeOption, type RoomChangeResult, type Voucher,
 } from '../lib/bnb'
 import { COUNTRIES, phoneComplete } from '../lib/countries'
 import { formatDate, formatMoney, thisMonth, todayISO, useApi } from '../lib/hr'
@@ -27,6 +27,8 @@ const STATUS_TONE: Record<BookingStatus, Tone> = { reserved: 'amber', occupied: 
 const fmtD = (iso: string) => new Date(iso).toLocaleDateString([], { day: 'numeric', month: 'short' })
 const fmtDT = (iso: string) =>
   new Date(iso).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+/** `datetime-local` value for a Date, in the browser's timezone. */
+const localDT = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
 const initials = (name: string) => name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase()
 
 const idLabel = (t: GuestIdType | '') => GUEST_ID_TYPES.find((x) => x.value === t)?.label ?? 'ID'
@@ -39,6 +41,18 @@ interface Txn {
   ref: string
   payer: string
   amount: number
+}
+
+/** Stay-type filters living as sidebar links under the manager's Guest
+ *  history. Client keys always carry an id:/ph:/em:/nm: prefix, so these
+ *  slugs can never collide with a portal URL. */
+const GUEST_FILTERS = ['reservations', 'in-house', 'day-rest'] as const
+type GuestFilter = (typeof GUEST_FILTERS)[number]
+
+const GUEST_FILTER_EMPTY: Record<GuestFilter, [title: string, text: string]> = {
+  reservations: ['No upcoming reservations', 'Clients with a booking waiting for check-in will appear here.'],
+  'in-house': ['Nobody is in house', 'Clients checked in at the branch will appear here.'],
+  'day-rest': ['No day-rest guests', 'Clients who booked a day rest will appear here.'],
 }
 
 type RangeMode = 'all' | 'day' | 'period' | 'month' | 'year'
@@ -65,7 +79,9 @@ export default function ClientsPage({ item, t, me, base }: { item: NavItem; t: W
   const nav = useNavigate()
   const { '*': rest = '' } = useParams()
   const section = base.split('/').pop() ?? 'clients'
-  const selKey = rest.startsWith(`${section}/`) ? rest.slice(section.length + 1) : ''
+  const rawKey = rest.startsWith(`${section}/`) ? rest.slice(section.length + 1) : ''
+  const filter: GuestFilter | '' = (GUEST_FILTERS as readonly string[]).includes(rawKey) ? (rawKey as GuestFilter) : ''
+  const selKey = filter ? '' : rawKey
   const curYear = useNow(60_000).getFullYear()
 
   /** Switching modes pre-fills sensible defaults so the filter applies right away. */
@@ -103,9 +119,12 @@ export default function ClientsPage({ item, t, me, base }: { item: NavItem; t: W
   const ranged = clients.filter((c) => c.in_range)
   const years = useMemo(() => (data?.years.length ? data.years : [curYear]), [data, curYear])
 
+  const scoped = ranged.filter((c) =>
+    filter === 'reservations' ? c.has_reservation : filter === 'in-house' ? c.in_house : filter === 'day-rest' ? c.has_day_rest : true,
+  )
   const match = (c: ClientRow) =>
     !q || `${c.name} ${c.phone} ${c.email} ${c.id_number} ${c.nationality}`.toLowerCase().includes(q.toLowerCase())
-  const list = ranged.filter(match)
+  const list = scoped.filter(match)
   const th = `px-3 py-2.5 text-left text-[11px] font-medium uppercase tracking-wider ${t.muted}`
   const thc = `px-3 py-2.5 text-center text-[11px] font-medium uppercase tracking-wider ${t.muted}`
 
@@ -168,9 +187,9 @@ export default function ClientsPage({ item, t, me, base }: { item: NavItem; t: W
       />
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-        <Stat t={t} i={0} icon={Contact} label="Clients" value={data ? ranged.length : '—'} />
-        <Stat t={t} i={1} icon={Users} label="Repeat clients" value={data ? ranged.filter((c) => c.stays > 1).length : '—'} />
-        <Stat t={t} i={2} icon={BedDouble} label="In house now" value={data ? ranged.filter((c) => c.in_house).length : '—'} />
+        <Stat t={t} i={0} icon={Contact} label="Clients" value={data ? scoped.length : '—'} />
+        <Stat t={t} i={1} icon={Users} label="Repeat clients" value={data ? scoped.filter((c) => c.stays > 1).length : '—'} />
+        <Stat t={t} i={2} icon={BedDouble} label="In house now" value={data ? scoped.filter((c) => c.in_house).length : '—'} />
       </div>
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
@@ -224,18 +243,28 @@ export default function ClientsPage({ item, t, me, base }: { item: NavItem; t: W
       ) : loading && !data ? (
         <Panel t={t}><Loading t={t} /></Panel>
       ) : (
-        <Panel t={t} title="Clients" actions={<Pill tone="blue">{list.length}</Pill>}>
+        <Panel t={t} title={filter ? item.label : 'Clients'} actions={<Pill tone="blue">{list.length}</Pill>}>
           {!list.length ? (
             <Empty
               t={t}
               icon={Contact}
-              title={ranged.length ? 'No clients match your search' : clients.length ? 'No visits in this period' : 'No clients yet'}
+              title={
+                scoped.length
+                  ? 'No clients match your search'
+                  : filter
+                    ? GUEST_FILTER_EMPTY[filter][0]
+                    : clients.length
+                      ? 'No visits in this period'
+                      : 'No clients yet'
+              }
               text={
-                ranged.length
+                scoped.length
                   ? 'Try a different search.'
-                  : clients.length
-                    ? 'Pick a different range or switch back to All time.'
-                    : 'Guests registered from Reservations or Register client will appear here.'
+                  : filter
+                    ? GUEST_FILTER_EMPTY[filter][1]
+                    : clients.length
+                      ? 'Pick a different range or switch back to All time.'
+                      : 'Guests registered from Reservations or Register client will appear here.'
               }
             />
           ) : (
@@ -314,14 +343,28 @@ export default function ClientsPage({ item, t, me, base }: { item: NavItem; t: W
 function ClientPortal({ t, c, base, charge, th, rooms, me, onChanged }: { t: WorkspaceTheme; c: ClientRow; base: string; charge: (b: Booking) => number; th: string; rooms: Room[]; me: Employee; onChanged?: () => void }) {
   const { data: bookings, loading, setData } = useApi(() => bnb.bookings({ client: c.key, limit: 500 }), [c.key])
   const [busy, setBusy] = useState(0)
-  const [moving, setMoving] = useState<Booking | null>(null)
+  const [moving, setMoving] = useState<{ b: Booking; dir?: 'up' | 'down' } | null>(null)
   const [paying, setPaying] = useState<Booking | null>(null)
   const [adding, setAdding] = useState<Booking | null>(null)
+  const [cancelling, setCancelling] = useState<Booking | null>(null)
+  const [pkgMenu, setPkgMenu] = useState(false)
   const [editing, setEditing] = useState(false)
   const [suspending, setSuspending] = useState(false)
   const [acting, setActing] = useState(false)
   const [flash, setFlash] = useState({ text: '', bad: false })
   const nav = useNavigate()
+  const location = useLocation()
+  /** The sidebar's #cp-* links open each section as a sheet — the hash is the
+   *  state, so those URLs stay deep-linkable. Transactions and stay history
+   *  open page-wide; current package, profile and vouchers open as popups. */
+  const sheet =
+    location.hash === '#cp-current' ? 'current'
+    : location.hash === '#cp-profile' ? 'profile'
+    : location.hash === '#cp-vouchers' ? 'vouchers'
+    : location.hash === '#cp-transactions' ? 'transactions'
+    : location.hash === '#cp-history' ? 'history'
+    : null
+  const closeSheet = () => nav(location.pathname, { replace: true })
   const now = useNow(30_000).getTime()
   const txns = useMemo(() => {
     const out: Txn[] = []
@@ -329,7 +372,7 @@ function ClientPortal({ t, c, base, charge, th, rooms, me, onChanged }: { t: Wor
       const where = `Booking #${b.id} · ${b.room_name ?? 'Room'}`
       if (b.deposit) out.push({ id: `d${b.id}`, date: b.created_at, kind: 'Deposit', detail: where, ref: '', payer: b.guest_name, amount: Number(b.deposit) })
       for (const p of b.payments ?? []) {
-        out.push({ id: `p${p.id}`, date: p.created_at, kind: p.method_label, detail: where, ref: [p.receipt_number, p.reference].filter(Boolean).join(' · '), payer: p.payer, amount: Number(p.amount) })
+        out.push({ id: `p${p.id}`, date: p.paid_at ?? p.created_at, kind: p.method_label, detail: where, ref: [p.receipt_number, p.reference].filter(Boolean).join(' · '), payer: p.payer, amount: Number(p.amount) })
       }
     }
     return out.sort((a, b) => b.date.localeCompare(a.date))
@@ -408,138 +451,41 @@ function ClientPortal({ t, c, base, charge, th, rooms, me, onChanged }: { t: Wor
 
       <Flash message={flash.text} tone={flash.bad ? 'red' : 'green'} />
 
-      <div className="lg:grid lg:grid-cols-[180px_minmax(0,1fr)] lg:gap-5">
-        {/* Portal sections — a sticky side menu on wide screens, a scrollable
-            strip on mobile. */}
-        <aside className="mb-4 lg:mb-0">
-          <nav aria-label="Client sections" className={`flex gap-1 overflow-x-auto p-1.5 lg:sticky lg:top-24 lg:flex-col ${t.radius} ${t.card}`}>
-            {current && <a href="#cp-current" className={navLink}><BedDouble className="size-4 shrink-0" /> Current package</a>}
-            <a href="#cp-profile" className={navLink}><Contact className="size-4 shrink-0" /> Profile</a>
-            <a href="#cp-vouchers" className={navLink}><Ticket className="size-4 shrink-0" /> Vouchers{vouchers.length ? ` (${vouchers.length})` : ''}</a>
-            <a href="#cp-transactions" className={navLink}><Wallet className="size-4 shrink-0" /> Transactions</a>
-            <a href="#cp-history" className={navLink}><History className="size-4 shrink-0" /> Stay history</a>
+      <div>
+        {/* Portal sections — the workspace sidebar carries them on wide
+            screens; this is the scrollable strip for mobile. */}
+        <aside className="mb-4 lg:hidden">
+          <nav aria-label="Client sections" className={`flex gap-1 overflow-x-auto p-1.5 ${t.radius} ${t.card}`}>
+            {current && <Link to="#cp-current" className={navLink}><BedDouble className="size-4 shrink-0" /> Current package</Link>}
+            <Link to="#cp-profile" className={navLink}><Contact className="size-4 shrink-0" /> Profile</Link>
+            <Link to="#cp-vouchers" className={navLink}><Ticket className="size-4 shrink-0" /> Vouchers{vouchers.length ? ` (${vouchers.length})` : ''}</Link>
+            <Link to="#cp-transactions" className={navLink}><Wallet className="size-4 shrink-0" /> Transactions</Link>
+            <Link to="#cp-history" className={navLink}><History className="size-4 shrink-0" /> Stay history</Link>
           </nav>
         </aside>
 
         <div className="min-w-0 space-y-5">
-      {/* The stay the guest is on — their current package and where the money
-          stands, read live from the booking ledger. */}
-      {current && (
-        <section id="cp-current" className={`relative scroll-mt-24 overflow-hidden p-5 ${t.radius} ${t.card}`}>
-          <div className={`pointer-events-none absolute -left-16 -top-20 size-56 rounded-full blur-2xl ${t.glowA}`} />
-          <div className="relative flex flex-col gap-4 lg:flex-row lg:items-center">
-            <div className="flex min-w-0 flex-1 items-start gap-3">
-              <span className={`grid size-11 shrink-0 place-items-center ${t.radius} ${t.iconBox}`}>
-                <BedDouble className="size-5" />
-              </span>
-              <div className="min-w-0">
-                <p className={`text-[11px] font-medium uppercase tracking-wider ${t.muted}`}>
-                  {current.status === 'occupied' ? 'Current package' : 'Next stay'} · {current.kind_label}
-                </p>
-                <h3 className={`truncate text-lg ${t.heading}`}>{current.room_name}</h3>
-                <p className={`mt-0.5 text-xs ${t.muted}`}>
-                  <CalendarClock className="mr-1 inline size-3" />
-                  {fmtD(current.start)} → {fmtD(current.end)} · {stayLength(current)}
-                  {current.status === 'occupied' && current.kind !== 'day_rest' && ` · ${nightsLeft} ${nightsLeft === 1 ? 'night' : 'nights'} left`}
-                </p>
-                {(current.packages ?? []).length > 0 && (
-                  <p className="mt-1.5 flex flex-wrap gap-1">
-                    {current.packages.map((x) => (
-                      <Pill key={x.id} tone="slate"><Package className="mr-1 inline size-3" />{x.name}</Pill>
-                    ))}
-                  </p>
-                )}
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-              <div className="text-xs">
-                <p className={t.muted}>Billed</p>
-                <p className="mt-0.5 text-base font-semibold tabular-nums">{formatMoney(current.bill)}</p>
-              </div>
-              <div className="text-xs">
-                <p className={t.muted}>Paid</p>
-                <p className="mt-0.5 text-base font-semibold tabular-nums">{formatMoney(current.paid)}</p>
-              </div>
-              <div className="text-xs">
-                <p className={t.muted}>Balance</p>
-                <p className={`mt-0.5 text-base font-bold tabular-nums ${Number(current.balance) > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                  {Number(current.balance) > 0 ? formatMoney(current.balance) : 'Settled'}
-                </p>
-              </div>
-              <StayActions
-                t={t} b={current} busy={busy === current.id}
-                onMove={() => setMoving(current)}
-                onAdd={() => setAdding(current)}
-                onPay={() => setPaying(current)}
-                onCheckout={() => void checkout(current)}
-              />
-            </div>
-          </div>
-        </section>
-      )}
-
+      {/* One card for the client: identity and contacts, then the stay
+          they're on as a clickable strip (opens the package options). The
+          strip's Balance column says "Settled", so no settled pill — and
+          "Current package" already says they're in house. Account actions
+          (edit, suspend) live in the profile sheet. */}
       <section id="cp-profile" className={`relative scroll-mt-24 overflow-hidden p-5 sm:p-6 ${t.radius} ${t.card}`}>
         <div className={`pointer-events-none absolute -right-20 -top-24 size-72 rounded-full blur-2xl ${t.glowA}`} />
-        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center">
-          <span className={`grid size-16 shrink-0 place-items-center text-lg font-bold sm:size-20 ${t.radius} ${t.iconBox}`}>
-            {initials(c.name)}
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className={`text-[11px] font-medium uppercase tracking-wider ${t.muted}`}>Client portal</p>
-            <h2 className={`mt-0.5 text-xl sm:text-2xl ${t.heading}`}>{c.name}</h2>
-            <p className={`mt-1 text-sm ${t.muted}`}>Client since {formatDate(c.since)}</p>
-          </div>
-          <div className="flex flex-wrap gap-2 sm:justify-end">
-            {c.suspended && <Pill tone="red">Suspended</Pill>}
-            {live.balance > 0 ? <Pill tone="amber">Live balance {formatMoney(live.balance)}</Pill> : <Pill tone="green">Fully settled</Pill>}
-            {c.in_house && <Pill tone="blue">In house now</Pill>}
-            {c.stays > 1 && <Pill tone="green">Repeat client · {c.stays} stays</Pill>}
-          </div>
-        </div>
-        <div className="relative mt-4 flex flex-wrap gap-2 text-xs">
-          <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 ${t.chip}`}>
-            <Phone className="size-3.5" /> {c.phone || 'No phone'}
-          </span>
-          {c.email && (
-            <span className={`inline-flex max-w-full items-center gap-1.5 rounded-full px-3 py-1 ${t.chip}`}>
-              <Mail className="size-3.5 shrink-0" /> <span className="truncate">{c.email}</span>
-            </span>
-          )}
-          {c.id_number && (
-            <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 ${t.chip}`}>
-              <IdCard className="size-3.5" /> {idLabel(c.id_type)} {c.id_number}
-            </span>
-          )}
-          {c.nationality && (
-            <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 ${t.chip}`}>
-              <Globe className="size-3.5" /> {c.nationality}
-            </span>
-          )}
-        </div>
-        {c.notes && (
-          <p className={`relative mt-3 flex items-start gap-1.5 text-xs ${t.muted}`}>
-            <MessageSquare className="mt-0.5 size-3.5 shrink-0" /> {c.notes}
-          </p>
+        <ProfileHead t={t} c={c} live={live} current={current} />
+
+        {current && (
+          <CurrentStrip
+            t={t} b={current} nightsLeft={nightsLeft} busy={busy === current.id} id="cp-current"
+            onPackage={() => setPkgMenu(true)}
+            onMove={() => setMoving({ b: current })}
+            onAdd={() => setAdding(current)}
+            onPay={() => setPaying(current)}
+            onCheckout={() => void checkout(current)}
+            onCancel={() => setCancelling(current)}
+          />
         )}
-        {c.suspended && c.suspend_reason && (
-          <p className="relative mt-3 flex items-start gap-1.5 text-xs text-rose-600 dark:text-rose-300">
-            <Ban className="mt-0.5 size-3.5 shrink-0" /> Suspended — {c.suspend_reason}
-          </p>
-        )}
-        <div className="relative mt-4 flex flex-wrap gap-2">
-          <Button t={t} variant="ghost" onClick={() => setEditing(true)}>
-            <Pencil className="size-3.5" /> Edit details
-          </Button>
-          {c.suspended ? (
-            <Button t={t} variant="ghost" busy={acting} onClick={() => void reinstate()}>
-              <Check className="size-3.5" /> Reinstate account
-            </Button>
-          ) : (
-            <Button t={t} variant="danger" onClick={() => setSuspending(true)}>
-              <Ban className="size-3.5" /> Suspend account
-            </Button>
-          )}
-        </div>
+        <ProfileMeta t={t} c={c} />
       </section>
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
@@ -551,162 +497,124 @@ function ClientPortal({ t, c, base, charge, th, rooms, me, onChanged }: { t: Wor
 
       <div id="cp-vouchers" className="scroll-mt-24">
       <Panel t={t} title="Vouchers" actions={<Pill tone="amber">{vouchers.length}</Pill>}>
-        {loading && !bookings ? (
-          <Loading t={t} />
-        ) : !vouchers.length ? (
-          <Empty t={t} icon={Ticket} title="No vouchers yet" text="Credit vouchers this client earns from room changes and downgrades appear here — they never expire." />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[36rem] border-collapse">
-              <thead>
-                <tr className={`border-b ${t.sidebarDivider}`}>
-                  <th className={th}>Code</th>
-                  <th className={th}>Issued</th>
-                  <th className={th}>From</th>
-                  <th className={th}>Status</th>
-                  <th className={`${th} text-right`}>Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {vouchers.map((v) => (
-                  <tr key={v.id} className={`border-b last:border-b-0 ${t.sidebarDivider}`}>
-                    <td className="px-3 py-2.5 text-xs font-semibold"><Ticket className="mr-1 inline size-3" />{v.code}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-xs">{fmtDT(v.created_at)}</td>
-                    <td className={`px-3 py-2.5 text-xs ${t.muted}`}>Booking #{v.booking} · {v.room}</td>
-                    <td className="px-3 py-2.5 text-xs">
-                      {v.redeemed_at ? <Pill tone="slate">Redeemed {fmtD(v.redeemed_at)}</Pill> : <Pill tone="green">Active</Pill>}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right text-xs font-semibold">{formatMoney(v.amount)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <VouchersBody t={t} vouchers={vouchers} loading={loading && !bookings} th={th} />
       </Panel>
       </div>
 
       <div id="cp-transactions" className="scroll-mt-24">
       <Panel t={t} title="Transactions" actions={<Pill tone="blue">{txns.length}</Pill>}>
-        {loading && !bookings ? (
-          <Loading t={t} />
-        ) : !txns.length ? (
-          <Empty t={t} icon={Wallet} title="No transactions yet" text="Deposits and payments recorded on this client's bookings will appear here." />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[44rem] border-collapse">
-              <thead>
-                <tr className={`border-b ${t.sidebarDivider}`}>
-                  <th className={th}>Date</th>
-                  <th className={th}>Type</th>
-                  <th className={th}>For</th>
-                  <th className={th}>Reference</th>
-                  <th className={th}>Paid by</th>
-                  <th className={`${th} text-right`}>Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {txns.map((x) => (
-                  <tr key={x.id} className={`border-b last:border-b-0 ${t.sidebarDivider}`}>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-xs">{fmtDT(x.date)}</td>
-                    <td className="px-3 py-2.5 text-xs"><Pill tone={x.kind === 'Deposit' ? 'amber' : 'green'}>{x.kind}</Pill></td>
-                    <td className={`px-3 py-2.5 text-xs ${t.muted}`}>{x.detail}</td>
-                    <td className={`px-3 py-2.5 text-xs ${t.muted}`}>{x.ref || '—'}</td>
-                    <td className="px-3 py-2.5 text-xs">{x.payer}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right text-xs font-semibold">{formatMoney(x.amount)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <TxnsBody t={t} txns={txns} loading={loading && !bookings} th={th} />
       </Panel>
       </div>
 
       <div id="cp-history" className="scroll-mt-24">
       <Panel t={t} title="Stay history" actions={<Pill tone="blue">{bookings?.length ?? c.bookings}</Pill>}>
-        {loading && !bookings ? (
-          <Loading t={t} />
-        ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[60rem] border-collapse">
-            <thead>
-              <tr className={`border-b ${t.sidebarDivider}`}>
-                <th className={th}>Room</th>
-                <th className={th}>Period</th>
-                <th className={th}>Party</th>
-                <th className={`${th} text-right`}>Billed</th>
-                <th className={`${th} text-right`}>Paid</th>
-                <th className={`${th} text-right`}>Status</th>
-                <th className={`w-40 ${th} text-right`}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(bookings ?? []).map((b) => {
-                const paid = Number(b.deposit ?? 0) + (b.payments ?? []).reduce((n, p) => n + Number(p.amount), 0)
-                return (
-                  <tr key={b.id} className={`border-b align-top last:border-b-0 ${t.sidebarDivider}`}>
-                    <td className="px-3 py-3 text-xs">
-                      <p className="flex items-center gap-1.5 font-medium"><BedDouble className="size-3.5 shrink-0" />{b.room_name}</p>
-                      <p className={`mt-0.5 ${t.muted}`}>{b.kind_label}</p>
-                      {(b.packages ?? []).map((x) => (
-                        <p key={x.id} className={`mt-0.5 ${t.muted}`} title={`${x.payer} · ${formatMoney(x.amount)}`}>
-                          <Package className="mr-1 inline size-3" />{x.name} — {x.payer}
-                        </p>
-                      ))}
-                    </td>
-                    <td className="px-3 py-3 text-xs">
-                      <p><CalendarClock className="mr-1 inline size-3" />{fmtD(b.start)} → {fmtD(b.end)}</p>
-                      <p className={`mt-0.5 ${t.muted}`}>{stayLength(b)}</p>
-                    </td>
-                    <td className="px-3 py-3 text-xs">
-                      <p><Users className="mr-1 inline size-3" />{b.guests} {b.guests === 1 ? 'guest' : 'guests'}</p>
-                      {(b.companions?.length ?? 0) > 0 && (
-                        <p className={`mt-0.5 ${t.muted}`} title={b.companions.map((x) => x.name).join(', ')}>
-                          with {b.companions.map((x) => x.name).join(', ')}
-                        </p>
-                      )}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-3 text-right text-xs font-medium">
-                      {b.status === 'cancelled' ? '—' : formatMoney(charge(b))}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-3 text-right text-xs font-medium">{paid ? formatMoney(paid) : '—'}</td>
-                    <td className="px-3 py-3 text-right">
-                      <Pill tone={STATUS_TONE[b.status]}>{b.status_label}</Pill>
-                      {(b.vouchers ?? []).map((v) => (
-                        <p key={v.id} className="mt-1 flex justify-end"><Pill tone="amber"><Ticket className="mr-1 inline size-3" />{v.code}</Pill></p>
-                      ))}
-                    </td>
-                    <td className="px-3 py-3 text-right">
-                      <StayActions
-                        t={t} b={b} busy={busy === b.id}
-                        onMove={() => setMoving(b)}
-                        onAdd={() => setAdding(b)}
-                        onPay={() => setPaying(b)}
-                        onCheckout={() => void checkout(b)}
-                      />
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-        )}
+        <HistoryBody
+          t={t} bookings={bookings} loading={loading && !bookings} th={th} charge={charge} busy={busy}
+          onMove={(b) => setMoving({ b })}
+          onAdd={setAdding}
+          onPay={setPaying}
+          onCheckout={checkout}
+          onCancel={setCancelling}
+        />
       </Panel>
       </div>
         </div>
       </div>
 
       <AnimatePresence>
+        {sheet === 'current' && (
+          <PortalSheet
+            t={t} icon={BedDouble} onClose={closeSheet}
+            title={current ? `${current.status === 'occupied' ? 'Current package' : 'Next stay'} · ${current.room_name}` : 'Current package'}
+            sub={c.name}
+          >
+            {current ? (
+              <CurrentStrip
+                t={t} b={current} nightsLeft={nightsLeft} busy={busy === current.id}
+                onPackage={() => { closeSheet(); setPkgMenu(true) }}
+                onMove={() => setMoving({ b: current })}
+                onAdd={() => setAdding(current)}
+                onPay={() => setPaying(current)}
+                onCheckout={() => void checkout(current)}
+                onCancel={() => setCancelling(current)}
+              />
+            ) : (
+              <Empty t={t} icon={BedDouble} title="No stay on the books" text="This client has no occupied or upcoming booking at the branch." />
+            )}
+          </PortalSheet>
+        )}
+        {sheet === 'profile' && (
+          <PortalSheet t={t} icon={Contact} title={c.name} sub={`Client since ${formatDate(c.since)}`} onClose={closeSheet}>
+            <ProfileHead t={t} c={c} live={live} current={current} />
+            <ProfileMeta t={t} c={c} />
+            <div className="relative mt-5 flex flex-wrap gap-2">
+              <Button t={t} variant="ghost" onClick={() => setEditing(true)}>
+                <Pencil className="size-3.5" /> Edit details
+              </Button>
+              {c.suspended ? (
+                <Button t={t} variant="ghost" busy={acting} onClick={() => void reinstate()}>
+                  <Check className="size-3.5" /> Reinstate account
+                </Button>
+              ) : (
+                <Button t={t} variant="danger" onClick={() => setSuspending(true)}>
+                  <Ban className="size-3.5" /> Suspend account
+                </Button>
+              )}
+            </div>
+          </PortalSheet>
+        )}
+        {sheet === 'vouchers' && (
+          <PortalSheet t={t} icon={Ticket} title="Vouchers" sub={`${c.name} · ${vouchers.length} issued`} onClose={closeSheet}>
+            <VouchersBody t={t} vouchers={vouchers} loading={loading && !bookings} th={th} />
+          </PortalSheet>
+        )}
+        {sheet === 'transactions' && (
+          <PortalSheet t={t} icon={Wallet} title="Transactions" sub={`${c.name} · ${txns.length} records`} wide onClose={closeSheet}>
+            <TxnsBody t={t} txns={txns} loading={loading && !bookings} th={th} />
+          </PortalSheet>
+        )}
+        {sheet === 'history' && (
+          <PortalSheet t={t} icon={History} title="Stay history" sub={`${c.name} · ${bookings?.length ?? c.bookings} bookings`} wide onClose={closeSheet}>
+            <HistoryBody
+              t={t} bookings={bookings} loading={loading && !bookings} th={th} charge={charge} busy={busy}
+              onMove={(b) => setMoving({ b })}
+              onAdd={setAdding}
+              onPay={setPaying}
+              onCheckout={checkout}
+              onCancel={setCancelling}
+            />
+          </PortalSheet>
+        )}
+        {pkgMenu && current && (
+          <PackageMenu
+            t={t} b={current}
+            onClose={() => setPkgMenu(false)}
+            onUpgrade={() => { setPkgMenu(false); setMoving({ b: current, dir: 'up' }) }}
+            onDowngrade={() => { setPkgMenu(false); setMoving({ b: current, dir: 'down' }) }}
+            onCancel={() => { setPkgMenu(false); setCancelling(current) }}
+          />
+        )}
         {moving && (
           <ChangeRoom
-            t={t} b={moving} rooms={rooms}
+            t={t} b={moving.b} dir={moving.dir} rooms={rooms}
             onClose={() => setMoving(null)}
             onDone={(next, applied) => {
               setData((l) => l?.map((x) => (x.id === next.id ? next : x)) ?? null)
               setMoving(null)
-              setFlash({ text: moveText(moving, applied), bad: false })
+              setFlash({ text: moveText(next, applied), bad: false })
+              onChanged?.()
+            }}
+          />
+        )}
+        {cancelling && (
+          <CancelStay
+            t={t} b={cancelling} me={me}
+            onClose={() => setCancelling(null)}
+            onDone={(next, settle, amount) => {
+              setData((l) => l?.map((x) => (x.id === next.id ? next : x)) ?? null)
+              setCancelling(null)
+              setFlash({ text: cancelText(cancelling, settle, amount, next), bad: false })
               onChanged?.()
             }}
           />
@@ -761,6 +669,361 @@ function ClientPortal({ t, c, base, charge, th, rooms, me, onChanged }: { t: Wor
         )}
       </AnimatePresence>
     </>
+  )
+}
+
+/** A portal section opened as a sheet — the sidebar's #cp-* links land here.
+ *  `wide` gives the long tables (transactions, stay history) page room. */
+function PortalSheet({ t, icon: Icon, title, sub, wide, onClose, children }: {
+  t: WorkspaceTheme
+  icon: LucideIcon
+  title: string
+  sub?: string
+  wide?: boolean
+  onClose: () => void
+  children: ReactNode
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <motion.div
+      className="fixed inset-0 z-[60] grid place-items-center overflow-y-auto p-4"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+    >
+      <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" />
+      <motion.div
+        role="dialog" aria-modal="true" aria-label={title}
+        initial={{ scale: 0.96, y: 12 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.97, y: 8 }}
+        transition={{ type: 'spring', stiffness: 340, damping: 30 }}
+        className={`relative my-auto flex max-h-[calc(100vh-2rem)] w-full flex-col overflow-hidden shadow-2xl ${wide ? 'max-w-6xl' : 'max-w-2xl'} ${t.radius} ${t.root}`}
+      >
+        <header className="flex items-center justify-between gap-3 border-b border-slate-900/10 px-5 py-4 dark:border-white/10">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className={`grid size-10 shrink-0 place-items-center ${t.radius} ${t.iconBox}`}>
+              <Icon className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <h3 className={`truncate text-base ${t.heading}`}>{title}</h3>
+              {sub && <p className={`truncate text-xs ${t.muted}`}>{sub}</p>}
+            </div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className={`grid size-9 shrink-0 place-items-center ${t.radius} ${t.iconButton}`}>
+            <X className="size-4" />
+          </button>
+        </header>
+        <div className="flex-1 overflow-y-auto p-5">{children}</div>
+      </motion.div>
+    </motion.div>
+  )
+}
+
+/** The client's identity block — name, account pills, since. Shows on the
+ *  portal card and inside the profile sheet. */
+function ProfileHead({ t, c, live, current }: {
+  t: WorkspaceTheme
+  c: ClientRow
+  live: { billed: number; paid: number; balance: number }
+  current: Booking | null
+}) {
+  return (
+    <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center">
+      <span className={`grid size-16 shrink-0 place-items-center text-lg font-bold sm:size-20 ${t.radius} ${t.iconBox}`}>
+        {initials(c.name)}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className={`text-[11px] font-medium uppercase tracking-wider ${t.muted}`}>Client portal</p>
+        <h2 className={`mt-0.5 text-xl sm:text-2xl ${t.heading}`}>{c.name}</h2>
+        <p className={`mt-1 text-sm ${t.muted}`}>Client since {formatDate(c.since)}</p>
+      </div>
+      <div className="flex flex-wrap gap-2 sm:justify-end">
+        {c.suspended && <Pill tone="red">Suspended</Pill>}
+        {live.balance > 0 && <Pill tone="amber">Live balance {formatMoney(live.balance)}</Pill>}
+        {c.in_house && current?.status !== 'occupied' && <Pill tone="blue">In house now</Pill>}
+        {c.stays > 1 && <Pill tone="green">Repeat client · {c.stays} stays</Pill>}
+      </div>
+    </div>
+  )
+}
+
+/** Contact chips, notes and suspension details — the profile's quieter
+ *  metadata, shown on the card and in the profile sheet. */
+function ProfileMeta({ t, c }: { t: WorkspaceTheme; c: ClientRow }) {
+  return (
+    <>
+      <div className="relative mt-4 flex flex-wrap gap-2 text-xs">
+        <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 ${t.chip}`}>
+          <Phone className="size-3.5" /> {c.phone || 'No phone'}
+        </span>
+        {c.email && (
+          <span className={`inline-flex max-w-full items-center gap-1.5 rounded-full px-3 py-1 ${t.chip}`}>
+            <Mail className="size-3.5 shrink-0" /> <span className="truncate">{c.email}</span>
+          </span>
+        )}
+        {c.id_number && (
+          <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 ${t.chip}`}>
+            <IdCard className="size-3.5" /> {idLabel(c.id_type)} {c.id_number}
+          </span>
+        )}
+        {c.nationality && (
+          <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 ${t.chip}`}>
+            <Globe className="size-3.5" /> {c.nationality}
+          </span>
+        )}
+      </div>
+      {c.notes && (
+        <p className={`relative mt-3 flex items-start gap-1.5 text-xs ${t.muted}`}>
+          <MessageSquare className="mt-0.5 size-3.5 shrink-0" /> {c.notes}
+        </p>
+      )}
+      {c.suspended && c.suspend_reason && (
+        <p className="relative mt-3 flex items-start gap-1.5 text-xs text-rose-600 dark:text-rose-300">
+          <Ban className="mt-0.5 size-3.5 shrink-0" /> Suspended — {c.suspend_reason}
+        </p>
+      )}
+    </>
+  )
+}
+
+/** The current/next stay as a clickable money strip — its click opens the
+ *  package options popup. Lives on the profile card and in its own sheet. */
+function CurrentStrip({ t, b, nightsLeft, busy, id, onPackage, onMove, onAdd, onPay, onCheckout, onCancel }: {
+  t: WorkspaceTheme
+  b: Booking
+  nightsLeft: number
+  busy: boolean
+  id?: string
+  onPackage: () => void
+  onMove: () => void
+  onAdd: () => void
+  onPay: () => void
+  onCheckout: () => void
+  onCancel: () => void
+}) {
+  return (
+    <div
+      id={id}
+      onClick={onPackage}
+      title="Select for package options — upgrade, downgrade or cancel"
+      className={`relative mt-5 flex scroll-mt-24 cursor-pointer flex-col gap-4 border p-4 transition hover:bg-black/[0.02] dark:hover:bg-white/[0.03] lg:flex-row lg:items-center ${t.radius} ${t.sidebarDivider}`}
+    >
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        <span className={`grid size-11 shrink-0 place-items-center ${t.radius} ${t.iconBox}`}>
+          <BedDouble className="size-5" />
+        </span>
+        <div className="min-w-0">
+          <p className={`text-[11px] font-medium uppercase tracking-wider ${t.muted}`}>
+            {b.status === 'occupied' ? 'Current package' : 'Next stay'} · {b.kind_label}
+          </p>
+          <h3 className={`truncate text-lg ${t.heading}`}>{b.room_name}</h3>
+          <p className={`mt-0.5 text-xs ${t.muted}`}>
+            <CalendarClock className="mr-1 inline size-3" />
+            {fmtD(b.start)} → {fmtD(b.end)} · {stayLength(b)}
+            {b.status === 'occupied' && b.kind !== 'day_rest' && ` · ${nightsLeft} ${nightsLeft === 1 ? 'night' : 'nights'} left`}
+          </p>
+          {(b.packages ?? []).length > 0 && (
+            <p className="mt-1.5 flex flex-wrap gap-1">
+              {b.packages.map((x) => (
+                <Pill key={x.id} tone="slate"><Package className="mr-1 inline size-3" />{x.name}</Pill>
+              ))}
+            </p>
+          )}
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+        <div className="text-xs">
+          <p className={t.muted}>Billed</p>
+          <p className="mt-0.5 text-base font-semibold tabular-nums">{formatMoney(b.bill)}</p>
+        </div>
+        <div className="text-xs">
+          <p className={t.muted}>Paid</p>
+          <p className="mt-0.5 text-base font-semibold tabular-nums">{formatMoney(b.paid)}</p>
+        </div>
+        <div className="text-xs">
+          <p className={t.muted}>Balance</p>
+          <p className={`mt-0.5 text-base font-bold tabular-nums ${Number(b.balance) > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+            {Number(b.balance) > 0 ? formatMoney(b.balance) : 'Settled'}
+          </p>
+        </div>
+        {/* The strip's click opens the package popup — the actions menu
+            mustn't trigger it. */}
+        <div onClick={(e) => e.stopPropagation()}>
+          <StayActions
+            t={t} b={b} busy={busy}
+            onMove={onMove} onAdd={onAdd} onPay={onPay} onCheckout={onCheckout} onCancel={onCancel}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** The client's credit vouchers — the same table fills the panel on the
+ *  portal page and the vouchers sheet. */
+function VouchersBody({ t, vouchers, loading, th }: {
+  t: WorkspaceTheme
+  vouchers: (Voucher & { booking: number; room: string })[]
+  loading: boolean
+  th: string
+}) {
+  if (loading) return <Loading t={t} />
+  if (!vouchers.length)
+    return <Empty t={t} icon={Ticket} title="No vouchers yet" text="Credit vouchers this client earns from room changes and downgrades appear here — they never expire." />
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[36rem] border-collapse">
+        <thead>
+          <tr className={`border-b ${t.sidebarDivider}`}>
+            <th className={th}>Code</th>
+            <th className={th}>Issued</th>
+            <th className={th}>From</th>
+            <th className={th}>Status</th>
+            <th className={`${th} text-right`}>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {vouchers.map((v) => (
+            <tr key={v.id} className={`border-b last:border-b-0 ${t.sidebarDivider}`}>
+              <td className="px-3 py-2.5 text-xs font-semibold"><Ticket className="mr-1 inline size-3" />{v.code}</td>
+              <td className="whitespace-nowrap px-3 py-2.5 text-xs">{fmtDT(v.created_at)}</td>
+              <td className={`px-3 py-2.5 text-xs ${t.muted}`}>Booking #{v.booking} · {v.room}</td>
+              <td className="px-3 py-2.5 text-xs">
+                {v.redeemed_at ? <Pill tone="slate">Redeemed {fmtD(v.redeemed_at)}</Pill> : <Pill tone="green">Active</Pill>}
+              </td>
+              <td className="whitespace-nowrap px-3 py-2.5 text-right text-xs font-semibold">{formatMoney(v.amount)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/** The client's money ledger — deposits and payments across their bookings.
+ *  The same table fills the panel and the transactions sheet. */
+function TxnsBody({ t, txns, loading, th }: {
+  t: WorkspaceTheme
+  txns: Txn[]
+  loading: boolean
+  th: string
+}) {
+  if (loading) return <Loading t={t} />
+  if (!txns.length)
+    return <Empty t={t} icon={Wallet} title="No transactions yet" text="Deposits and payments recorded on this client's bookings will appear here." />
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[44rem] border-collapse">
+        <thead>
+          <tr className={`border-b ${t.sidebarDivider}`}>
+            <th className={th}>Date</th>
+            <th className={th}>Type</th>
+            <th className={th}>For</th>
+            <th className={th}>Reference</th>
+            <th className={th}>Paid by</th>
+            <th className={`${th} text-right`}>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {txns.map((x) => (
+            <tr key={x.id} className={`border-b last:border-b-0 ${t.sidebarDivider}`}>
+              <td className="whitespace-nowrap px-3 py-2.5 text-xs">{fmtDT(x.date)}</td>
+              <td className="px-3 py-2.5 text-xs"><Pill tone={x.kind === 'Deposit' ? 'amber' : 'green'}>{x.kind}</Pill></td>
+              <td className={`px-3 py-2.5 text-xs ${t.muted}`}>{x.detail}</td>
+              <td className={`px-3 py-2.5 text-xs ${t.muted}`}>{x.ref || '—'}</td>
+              <td className="px-3 py-2.5 text-xs">{x.payer}</td>
+              <td className="whitespace-nowrap px-3 py-2.5 text-right text-xs font-semibold">{formatMoney(x.amount)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/** Every booking the client has made at the branch, with per-stay actions.
+ *  The same table fills the panel and the stay-history sheet. */
+function HistoryBody({ t, bookings, loading, th, charge, busy, onMove, onAdd, onPay, onCheckout, onCancel }: {
+  t: WorkspaceTheme
+  bookings: Booking[] | null
+  loading: boolean
+  th: string
+  charge: (b: Booking) => number
+  busy: number
+  onMove: (b: Booking) => void
+  onAdd: (b: Booking) => void
+  onPay: (b: Booking) => void
+  onCheckout: (b: Booking) => void
+  onCancel: (b: Booking) => void
+}) {
+  if (loading) return <Loading t={t} />
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[60rem] border-collapse">
+        <thead>
+          <tr className={`border-b ${t.sidebarDivider}`}>
+            <th className={th}>Room</th>
+            <th className={th}>Period</th>
+            <th className={th}>Party</th>
+            <th className={`${th} text-right`}>Billed</th>
+            <th className={`${th} text-right`}>Paid</th>
+            <th className={`${th} text-right`}>Status</th>
+            <th className={`w-40 ${th} text-right`}>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(bookings ?? []).map((b) => {
+            const paid = Number(b.deposit ?? 0) + (b.payments ?? []).reduce((n, p) => n + Number(p.amount), 0)
+            return (
+              <tr key={b.id} className={`border-b align-top last:border-b-0 ${t.sidebarDivider}`}>
+                <td className="px-3 py-3 text-xs">
+                  <p className="flex items-center gap-1.5 font-medium"><BedDouble className="size-3.5 shrink-0" />{b.room_name}</p>
+                  <p className={`mt-0.5 ${t.muted}`}>{b.kind_label}</p>
+                  {(b.packages ?? []).map((x) => (
+                    <p key={x.id} className={`mt-0.5 ${t.muted}`} title={`${x.payer} · ${formatMoney(x.amount)}`}>
+                      <Package className="mr-1 inline size-3" />{x.name} — {x.payer}
+                    </p>
+                  ))}
+                </td>
+                <td className="px-3 py-3 text-xs">
+                  <p><CalendarClock className="mr-1 inline size-3" />{fmtD(b.start)} → {fmtD(b.end)}</p>
+                  <p className={`mt-0.5 ${t.muted}`}>{stayLength(b)}</p>
+                </td>
+                <td className="px-3 py-3 text-xs">
+                  <p><Users className="mr-1 inline size-3" />{b.guests} {b.guests === 1 ? 'guest' : 'guests'}</p>
+                  {(b.companions?.length ?? 0) > 0 && (
+                    <p className={`mt-0.5 ${t.muted}`} title={b.companions.map((x) => x.name).join(', ')}>
+                      with {b.companions.map((x) => x.name).join(', ')}
+                    </p>
+                  )}
+                </td>
+                <td className="whitespace-nowrap px-3 py-3 text-right text-xs font-medium">
+                  {b.status === 'cancelled' ? '—' : formatMoney(charge(b))}
+                </td>
+                <td className="whitespace-nowrap px-3 py-3 text-right text-xs font-medium">{paid ? formatMoney(paid) : '—'}</td>
+                <td className="px-3 py-3 text-right">
+                  <Pill tone={STATUS_TONE[b.status]}>{b.status_label}</Pill>
+                  {(b.vouchers ?? []).map((v) => (
+                    <p key={v.id} className="mt-1 flex justify-end"><Pill tone="amber"><Ticket className="mr-1 inline size-3" />{v.code}</Pill></p>
+                  ))}
+                </td>
+                <td className="px-3 py-3 text-right">
+                  <StayActions
+                    t={t} b={b} busy={busy === b.id}
+                    onMove={() => onMove(b)}
+                    onAdd={() => onAdd(b)}
+                    onPay={() => onPay(b)}
+                    onCheckout={() => void onCheckout(b)}
+                    onCancel={() => onCancel(b)}
+                  />
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -960,7 +1223,7 @@ const pkgText = (b: Booking, a: AddPackageResult['applied']) =>
 /** A stay's action links collapsed into one dropdown — room change, extra
  *  packages, payment and checkout. `position: fixed` so the menu isn't clipped
  *  by the table's horizontal scroll container. */
-function StayActions({ t, b, busy, onMove, onAdd, onPay, onCheckout }: {
+function StayActions({ t, b, busy, onMove, onAdd, onPay, onCheckout, onCancel }: {
   t: WorkspaceTheme
   b: Booking
   busy: boolean
@@ -968,16 +1231,18 @@ function StayActions({ t, b, busy, onMove, onAdd, onPay, onCheckout }: {
   onAdd: () => void
   onPay: () => void
   onCheckout: () => void
+  onCancel: () => void
 }) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState({ top: 0, right: 0 })
+  const box = useRef<HTMLSpanElement>(null)
   const ref = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (!open) return
     const close = () => setOpen(false)
     const onDown = (e: PointerEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) close()
+      if (box.current && !box.current.contains(e.target as Node)) close()
     }
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close()
     document.addEventListener('pointerdown', onDown)
@@ -1003,7 +1268,7 @@ function StayActions({ t, b, busy, onMove, onAdd, onPay, onCheckout }: {
   const item = `flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-xs font-semibold transition ${t.radius} ${t.navIdle}`
   const go = (fn: () => void) => () => { setOpen(false); fn() }
   return (
-    <>
+    <span ref={box} className="inline-flex">
       <button
         type="button" ref={ref} onClick={toggle} aria-haspopup="menu" aria-expanded={open}
         className={`inline-flex h-9 items-center justify-center gap-1.5 px-3.5 text-xs font-semibold transition ${t.radius} ${t.chip} hover:brightness-95 dark:hover:brightness-125`}
@@ -1041,13 +1306,18 @@ function StayActions({ t, b, busy, onMove, onAdd, onPay, onCheckout }: {
                 <LogOut className="size-3.5" /> {busy ? 'Checking out…' : 'Check out'}
               </button>
             )}
+            {active && (
+              <button type="button" role="menuitem" onClick={go(onCancel)} className={`${item} hover:!text-rose-500`}>
+                <Ban className="size-3.5" /> Cancel booking
+              </button>
+            )}
             {!active && (
               <p className={`px-3 py-2.5 text-xs ${t.muted}`}>Stay {b.status_label.toLowerCase()} — nothing to do.</p>
             )}
           </motion.div>
         )}
       </AnimatePresence>
-    </>
+    </span>
   )
 }
 
@@ -1064,13 +1334,243 @@ const moveText = (b: Booking, a: RoomChangeResult['applied']) => {
 
 const DAY = 86_400_000
 
+/** Success flash for a cancelled booking — how the collected money was settled. */
+const cancelText = (b: Booking, settle: CancelSettle, amount: number, next: Booking) => {
+  const head = `${b.guest_name}'s ${b.kind_label.toLowerCase()} was cancelled`
+  if (settle === 'refund') return `${head} — ${formatMoney(amount)} withdrawn from the till.`
+  if (settle === 'voucher') {
+    const code = next.vouchers[0]?.code
+    return `${head} — voucher ${code ?? ''} (${formatMoney(amount)}) issued for a future stay.`
+  }
+  return amount > 0 ? `${head} — ${formatMoney(amount)} paid stays on record as a refund due.` : `${head}.`
+}
+
+/** The popup that opens when the receptionist selects the current package —
+ *  upgrade, downgrade or cancel; each route then settles the price difference
+ *  a different way (money in or out, nights added or given back, or a
+ *  redeemable voucher). */
+function PackageMenu({ t, b, onClose, onUpgrade, onDowngrade, onCancel }: {
+  t: WorkspaceTheme
+  b: Booking
+  onClose: () => void
+  onUpgrade: () => void
+  onDowngrade: () => void
+  onCancel: () => void
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  // Day rests bill by the hour — the nightly-rate change math doesn't apply.
+  const off = b.kind === 'day_rest' ? 'Day rests bill by the hour — the room can\'t be swapped.' : undefined
+  const opts: { icon: LucideIcon; title: string; detail: string; fn: () => void; off?: string; danger?: boolean }[] = [
+    { icon: TrendingUp, title: 'Upgrade', detail: 'Move to a pricier room — collect the difference (top up), or give back nights to cover it.', fn: onUpgrade, off },
+    { icon: TrendingDown, title: 'Downgrade', detail: 'Move to a cheaper room — refund the difference, add free nights, or issue a voucher the guest redeems later.', fn: onDowngrade, off },
+    { icon: Ban, title: 'Cancel package', detail: 'End this booking — withdraw the paid balance, turn it into a redeemable voucher, or keep it on record.', fn: onCancel, danger: true },
+  ]
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-[60] grid place-items-center overflow-y-auto p-4"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+    >
+      <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" />
+      <motion.div
+        role="dialog" aria-modal="true" aria-label={`Package options for ${b.guest_name}`}
+        initial={{ scale: 0.94, y: 12 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.96, y: 8 }}
+        transition={{ type: 'spring', stiffness: 340, damping: 30 }}
+        className={`relative my-auto w-full max-w-md overflow-hidden shadow-2xl ${t.radius} ${t.root}`}
+      >
+        <header className="flex items-center justify-between gap-3 border-b border-slate-900/10 px-5 py-4 dark:border-white/10">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className={`grid size-10 shrink-0 place-items-center ${t.radius} ${t.iconBox}`}>
+              <Package className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <h3 className={`truncate text-base ${t.heading}`}>Package options</h3>
+              <p className={`text-xs ${t.muted}`}>{b.guest_name} · {b.room_name} · {b.kind_label}</p>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className={`grid size-9 shrink-0 place-items-center ${t.radius} ${t.iconButton}`}>
+            <X className="size-4" />
+          </button>
+        </header>
+
+        <div className="space-y-2 px-5 py-5">
+          {opts.map((o) => (
+            <button
+              key={o.title} type="button" disabled={!!o.off} title={o.off} onClick={o.fn}
+              className={`flex w-full items-start gap-3 p-4 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${t.radius} ${t.chip} ${t.cardHover}`}
+            >
+              <span className={`grid size-10 shrink-0 place-items-center rounded-xl ${o.danger ? 'bg-rose-500/12 text-rose-600 dark:text-rose-300' : t.iconBox}`}>
+                <o.icon className="size-4.5" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className={`block text-sm font-semibold ${o.danger ? 'text-rose-600 dark:text-rose-300' : ''}`}>{o.title}</span>
+                <span className={`mt-0.5 block text-xs ${t.muted}`}>{o.off || o.detail}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </motion.div>
+    </motion.div>
+  )
+}
+
+/** Cancelling a live stay — the receptionist picks what happens to money the
+ *  guest already paid: withdraw it as a refund through a till channel, turn
+ *  it into a redeemable voucher, or keep it on record as a refund due. */
+function CancelStay({ t, b, me, onClose, onDone }: {
+  t: WorkspaceTheme
+  b: Booking
+  me: Employee
+  onClose: () => void
+  onDone: (next: Booking, settle: CancelSettle, amount: number) => void
+}) {
+  const tills = useApi(() => bnb.tills({ open: '1' }))
+  const paid = Number(b.paid)
+  const [settle, setSettle] = useState<CancelSettle>('refund')
+  const [method, setMethod] = useState<PaymentMethod>('cash')
+  const [ref, setRef] = useState('')
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !busy && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [busy, onClose])
+
+  // Refunds leave through the open till — same gate collecting money has.
+  const open = (tills.data ?? []).find((s) => s.status === 'open')
+  const mine = !!open && (me.role !== 'branch_receptionist' || open.opened_by === me.id)
+  const tillBlock = tills.loading && !tills.data ? ''
+    : !open ? 'The till is closed — open it on the Counter page before handing money out.'
+    : !mine ? `${open.opened_by_name ?? 'Another receptionist'} has the till open — only they can hand money out.` : ''
+
+  const opts: { id: CancelSettle; icon: LucideIcon; title: string; detail: string; off?: string }[] = [
+    { id: 'refund', icon: Banknote, title: 'Withdraw the balance', detail: `Hand ${formatMoney(paid)} back to the guest now — pick the channel below.`, off: tillBlock || undefined },
+    { id: 'voucher', icon: Ticket, title: 'Take a voucher', detail: `Issue a ${formatMoney(paid)} voucher — the guest redeems it on a future stay. It never expires.` },
+    { id: 'keep', icon: Receipt, title: 'Keep it on record', detail: 'Cancel without returning money — the paid amount stays listed as a refund due in accounts.' },
+  ]
+
+  async function confirm() {
+    if (settle === 'refund' && tillBlock) return
+    setBusy(true)
+    setErr('')
+    try {
+      const next = await bnb.cancelBooking(
+        b.id,
+        paid > 0
+          ? { settle, method: settle === 'refund' ? method : undefined, reference: ref.trim() || undefined }
+          : {},
+      )
+      onDone(next, settle, paid)
+    } catch (e) {
+      setErr(parseApiError(e).message)
+      setBusy(false)
+    }
+  }
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-[60] grid place-items-center overflow-y-auto p-4"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+    >
+      <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" />
+      <motion.div
+        role="dialog" aria-modal="true" aria-label={`Cancel ${b.guest_name}'s booking`}
+        initial={{ scale: 0.94, y: 12 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.96, y: 8 }}
+        transition={{ type: 'spring', stiffness: 340, damping: 30 }}
+        className={`relative my-auto flex max-h-[calc(100vh-2rem)] w-full max-w-lg flex-col overflow-hidden shadow-2xl ${t.radius} ${t.root}`}
+      >
+        <header className="flex items-center justify-between gap-3 border-b border-slate-900/10 px-5 py-4 dark:border-white/10">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-rose-500/12 text-rose-600 dark:text-rose-300">
+              <Ban className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <h3 className={`truncate text-base ${t.heading}`}>Cancel package</h3>
+              <p className={`text-xs ${t.muted}`}>{b.guest_name} · booking #{b.id}</p>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className={`grid size-9 shrink-0 place-items-center ${t.radius} ${t.iconButton}`}>
+            <X className="size-4" />
+          </button>
+        </header>
+
+        <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
+          <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2.5 text-xs ${t.radius} ${t.chip}`}>
+            <span className="font-semibold">{b.room_name}</span>
+            <span className={t.muted}>{fmtD(b.start)} → {fmtD(b.end)}</span>
+            <span className={t.muted}>{stayLength(b)}</span>
+            <span className={t.muted}>paid {formatMoney(paid)}</span>
+          </div>
+
+          {paid > 0 ? (
+            <>
+              <section>
+                <legend className={`mb-2 text-xs font-semibold uppercase tracking-wider ${t.muted}`}>Settle the paid balance</legend>
+                <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Settle the paid balance">
+                  {opts.map((o) => {
+                    const sel = settle === o.id
+                    return (
+                      <button
+                        key={o.id} type="button" role="radio" aria-checked={sel}
+                        disabled={!!o.off} title={o.off}
+                        onClick={() => setSettle(o.id)}
+                        className={`flex flex-col gap-1.5 p-3 text-left transition disabled:cursor-not-allowed ${t.radius} ${
+                          sel ? t.navActive : o.off ? `${t.chip} opacity-50` : `${t.chip} ${t.cardHover}`
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5 text-xs font-semibold"><o.icon className="size-3.5" /> {o.title}</span>
+                        <span className={`text-[11px] ${sel ? 'opacity-80' : t.muted}`}>{o.off || o.detail}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </section>
+
+              {settle === 'refund' && !tillBlock && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Select t={t} label="Refund through" value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>
+                    {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </Select>
+                  <Input t={t} label="Reference (optional)" value={ref} onChange={(e) => setRef(e.target.value)} placeholder="Receipt or transaction ref" />
+                </div>
+              )}
+            </>
+          ) : (
+            <p className={`px-3 py-2.5 text-xs ${t.radius} ${t.chip}`}>
+              Nothing was collected on this booking — cancelling just frees the room for its period.
+            </p>
+          )}
+          {err && <p className={`px-3 py-2.5 text-xs text-rose-500 ${t.radius} ${t.chip}`}>{err}</p>}
+        </div>
+
+        <footer className="flex justify-end gap-2 border-t border-slate-900/10 px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] dark:border-white/10">
+          <Button t={t} variant="ghost" onClick={onClose} disabled={busy}>Keep booking</Button>
+          <Button t={t} variant="danger" busy={busy} disabled={settle === 'refund' && !!tillBlock && paid > 0} onClick={() => void confirm()}>
+            <Ban className="size-4" /> Cancel package
+          </Button>
+        </footer>
+      </motion.div>
+    </motion.div>
+  )
+}
+
 /** The portal's change-room flow — pick a free room, see the credit/cost
  *  difference on the unused nights, settle it, confirm. Money options ask for
  *  the channel they move through; the server re-quotes and applies atomically. */
-function ChangeRoom({ t, b, rooms, onClose, onDone }: {
+function ChangeRoom({ t, b, rooms, dir, onClose, onDone }: {
   t: WorkspaceTheme
   b: Booking
   rooms: Room[]
+  /** 'up' limits the picker to pricier rooms (upgrade), 'down' to cheaper
+   *  ones (downgrade) — the package popup launches it with a direction. */
+  dir?: 'up' | 'down'
   onClose: () => void
   onDone: (next: Booking, applied: RoomChangeResult['applied']) => void
 }) {
@@ -1104,10 +1604,11 @@ function ChangeRoom({ t, b, rooms, onClose, onDone }: {
   const blocked = busyRooms(endMs)
   const companions = new Set((b.companions ?? []).map((c) => c.room).filter((r): r is number => r != null))
   const freeNow = (r: Room) => r.status === 'active' && r.id !== b.room && !blocked.has(r.id) && !companions.has(r.id)
+  const fits = (r: Room) => !dir || (dir === 'up' ? Number(r.price) > oldRate : Number(r.price) < oldRate)
   const sorted = useMemo(
-    () => [...rooms].sort((x, y) => Number(freeNow(y)) - Number(freeNow(x)) || Number(x.price) - Number(y.price) || x.name.localeCompare(y.name)),
+    () => rooms.filter(fits).sort((x, y) => Number(freeNow(y)) - Number(freeNow(x)) || Number(x.price) - Number(y.price) || x.name.localeCompare(y.name)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rooms, live.data, changeFrom, endMs],
+    [rooms, live.data, changeFrom, endMs, dir],
   )
 
   const newRate = room ? Number(room.price) : 0
@@ -1178,7 +1679,7 @@ function ChangeRoom({ t, b, rooms, onClose, onDone }: {
     >
       <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" />
       <motion.div
-        role="dialog" aria-modal="true" aria-label={`Change room for ${b.guest_name}`}
+        role="dialog" aria-modal="true" aria-label={`${dir === 'up' ? 'Upgrade' : dir === 'down' ? 'Downgrade' : 'Change'} room for ${b.guest_name}`}
         initial={{ scale: 0.94, y: 12 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.96, y: 8 }}
         transition={{ type: 'spring', stiffness: 340, damping: 30 }}
         className={`relative my-auto flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col overflow-hidden shadow-2xl ${t.radius} ${t.root}`}
@@ -1186,10 +1687,10 @@ function ChangeRoom({ t, b, rooms, onClose, onDone }: {
         <header className="flex items-center justify-between gap-3 border-b border-slate-900/10 px-5 py-4 dark:border-white/10">
           <div className="flex min-w-0 items-center gap-3">
             <span className={`grid size-10 shrink-0 place-items-center ${t.radius} ${t.iconBox}`}>
-              <ArrowLeftRight className="size-5" />
+              {dir === 'up' ? <TrendingUp className="size-5" /> : dir === 'down' ? <TrendingDown className="size-5" /> : <ArrowLeftRight className="size-5" />}
             </span>
             <div className="min-w-0">
-              <h3 className={`truncate text-base ${t.heading}`}>Change room</h3>
+              <h3 className={`truncate text-base ${t.heading}`}>{dir === 'up' ? 'Upgrade room' : dir === 'down' ? 'Downgrade room' : 'Change room'}</h3>
               <p className={`text-xs ${t.muted}`}>{b.guest_name} · booking #{b.id}</p>
             </div>
           </div>
@@ -1212,9 +1713,13 @@ function ChangeRoom({ t, b, rooms, onClose, onDone }: {
           ) : (
             <>
               <section>
-                <legend className={`mb-2 text-xs font-semibold uppercase tracking-wider ${t.muted}`}>New room</legend>
+                <legend className={`mb-2 text-xs font-semibold uppercase tracking-wider ${t.muted}`}>
+                  {dir === 'up' ? 'Pricier rooms' : dir === 'down' ? 'Cheaper rooms' : 'New room'}
+                </legend>
                 {live.loading && !live.data ? (
                   <Loading t={t} rows={2} />
+                ) : !sorted.length ? (
+                  <Empty t={t} icon={BedDouble} title={dir === 'up' ? 'No pricier rooms' : 'No cheaper rooms'} text="Use Change room from the actions menu for a like-for-like swap." />
                 ) : (
                   <div className="grid max-h-64 gap-2 overflow-y-auto pr-1 sm:grid-cols-2" role="radiogroup" aria-label="New room">
                     {sorted.map((r) => {
@@ -1353,16 +1858,19 @@ function PayStay({ t, b, rooms, me, onClose, onDone }: {
   onClose: () => void
   onDone: (next: Booking, applied: PayResult['applied']) => void
 }) {
-  const tills = useApi(bnb.tills)
+  const tills = useApi(() => bnb.tills({ open: '1' }))
   const live = useApi(() => bnb.bookings({ active: '1', limit: 500 }))
   const [extra, setExtra] = useState(0)
   const [amount, setAmount] = useState('')
   const [dirty, setDirty] = useState(false)
   const [method, setMethod] = useState<PaymentMethod | ''>('')
   const [ref, setRef] = useState('')
+  const [paidAt, setPaidAt] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
   const now = useNow(30_000).getTime()
+  // Time paid defaults to now (ticking until the receptionist overrides it).
+  const shownPaidAt = paidAt || localDT(new Date(now))
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !busy && onClose()
@@ -1401,6 +1909,7 @@ function PayStay({ t, b, rooms, me, onClose, onDone }: {
         amount: Number(shown),
         method,
         reference: method === 'cash' ? undefined : ref.trim() || undefined,
+        paid_at: new Date(shownPaidAt).toISOString(),
         extend_nights: extra > 0 ? extra : undefined,
       })
       onDone(r.booking, r.applied)
@@ -1475,10 +1984,6 @@ function PayStay({ t, b, rooms, me, onClose, onDone }: {
           )}
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <Input
-              t={t} label="Amount received" type="number" min={0} step="0.01" required
-              value={shown} onChange={(e) => { setAmount(e.target.value); setDirty(true) }}
-            />
             <Select
               t={t} label="Method" value={method} required
               onChange={(e) => {
@@ -1490,14 +1995,22 @@ function PayStay({ t, b, rooms, me, onClose, onDone }: {
               <option value="" disabled>Pick a method</option>
               {PAYMENT_METHODS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </Select>
+            <Input
+              t={t} label="Amount received" type="number" min={0} step="0.01" required
+              value={shown} onChange={(e) => { setAmount(e.target.value); setDirty(true) }}
+            />
           </div>
           {method !== '' && method !== 'cash' && (
             <Input
               t={t} label={needsRef(method) ? 'Reference' : 'Reference (optional)'} required={needsRef(method)}
-              value={ref} onChange={(e) => setRef(e.target.value)}
+              value={ref} onChange={(e) => setRef(e.target.value.toUpperCase())}
               placeholder="Transaction / M-Pesa code" autoComplete="off"
             />
           )}
+          <Input
+            t={t} label="Time paid" type="datetime-local"
+            value={shownPaidAt} onChange={(e) => setPaidAt(e.target.value)}
+          />
 
           {tillBlock && <p className={`px-3 py-2.5 text-xs ${t.radius} ${t.chip}`}>{tillBlock}</p>}
           {err && <p className={`px-3 py-2.5 text-xs text-rose-500 ${t.radius} ${t.chip}`}>{err}</p>}
@@ -1525,7 +2038,7 @@ function AddPackage({ t, b, me, onClose, onDone }: {
   onClose: () => void
   onDone: (next: Booking, applied: AddPackageResult['applied']) => void
 }) {
-  const tills = useApi(bnb.tills)
+  const tills = useApi(() => bnb.tills({ open: '1' }))
   const catalogue = useApi(bnb.packages)
   const [pkg, setPkg] = useState<ExtraPackage | null>(null)
   const [guest, setGuest] = useState(0)

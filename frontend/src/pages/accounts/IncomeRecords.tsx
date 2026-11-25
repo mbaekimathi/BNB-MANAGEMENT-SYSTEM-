@@ -369,7 +369,7 @@ function AdvancePayments({ t, bookings }: { t: WorkspaceTheme; bookings: Booking
             <tbody>
               {rows.map(({ b, p }) => (
                 <tr key={p.id} className="border-t border-slate-900/5 dark:border-white/5">
-                  <td className={`px-3 py-2.5 ${t.muted}`}>{fmtDT(p.created_at)}</td>
+                  <td className={`px-3 py-2.5 ${t.muted}`}>{fmtDT(p.paid_at ?? p.created_at)}</td>
                   <td className="px-3 py-2.5 font-medium">{p.payer}</td>
                   <td className="px-3 py-2.5">
                     <span className="block">{b.guest_name}</span>

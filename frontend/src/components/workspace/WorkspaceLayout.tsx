@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowLeft, Calculator, ChevronDown, Lock, LogIn, LogOut, Menu, MoreHorizontal, Plus, Timer, UserCircle, X } from 'lucide-react'
+import { ArrowLeft, Calculator, ChevronDown, LayoutDashboard, Lock, LogIn, LogOut, Menu, MoreHorizontal, Plus, Timer, UserCircle, X, type LucideIcon } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useTheme } from '../../context/ThemeContext'
@@ -10,6 +10,14 @@ import { hr, useApi, type ClockAction } from '../../lib/hr'
 import { useNow } from '../../lib/time'
 import { PROFILE_ITEM, type NavItem, type Workspace } from '../../lib/workspaces'
 import { Avatar } from './Avatar'
+
+/** An in-page section the sidebar links to by anchor — the client portal's
+ *  sections replace the nav links while a portal is open. */
+export interface SidebarAnchor {
+  id: string
+  label: string
+  icon: LucideIcon
+}
 
 interface Props {
   workspace: Workspace
@@ -23,6 +31,9 @@ interface Props {
   /** Set on a module's sub-pages — the sidebar then shows only the back
    *  link, since nav links live on the module's landing page. */
   hideLinks?: boolean
+  /** Anchor links into the page's own sections — they take over the sidebar's
+   *  link list when set (client portal sections). */
+  anchors?: SidebarAnchor[]
   onLogout: () => void
   children: ReactNode
 }
@@ -91,7 +102,46 @@ function NavLinks({ workspace, items, basePath, active, rail, onNavigate }: {
   )
 }
 
-function SideNav({ workspace, user, basePath, active, module, account, hideLinks, rail, onNavigate }: {
+/** In-page section links for the sidebar — hash navigations through the
+ *  router, so the page can open them as sheets. Same styling and entrance
+ *  animation as the nav links. */
+function AnchorLinks({ items, t, rail, onNavigate }: {
+  items: SidebarAnchor[]
+  t: Workspace['theme']
+  rail?: boolean
+  onNavigate?: () => void
+}) {
+  return (
+    <nav className="flex flex-col gap-1.5">
+      {items.map((a, i) => (
+        <motion.div
+          key={a.id}
+          initial={{ opacity: 0, x: -12 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.05 + i * 0.04, duration: 0.35 }}
+        >
+          <Link
+            to={`#${a.id}`}
+            onClick={onNavigate}
+            className={`group relative flex items-center gap-3 px-3 py-2.5 text-sm transition-all duration-200 ${t.radius} ${
+              rail ? 'md:max-lg:justify-center md:max-lg:px-0' : ''
+            } ${t.navIdle}`}
+          >
+            <a.icon className="size-[18px] shrink-0" />
+            <span className={rail ? 'md:max-lg:hidden' : ''}>{a.label}</span>
+            {rail && (
+              <span className="pointer-events-none absolute left-full z-50 ml-3 hidden whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 font-sans text-xs font-medium text-white shadow-xl md:max-lg:group-hover:block">
+                {a.label}
+              </span>
+            )}
+          </Link>
+        </motion.div>
+      ))}
+    </nav>
+  )
+}
+
+function SideNav({ workspace, user, basePath, active, module, account, hideLinks, anchors, rail, onNavigate }: {
   workspace: Workspace
   user: Employee
   basePath: string
@@ -99,6 +149,7 @@ function SideNav({ workspace, user, basePath, active, module, account, hideLinks
   module?: NavItem
   account?: boolean
   hideLinks?: boolean
+  anchors?: SidebarAnchor[]
   rail?: boolean
   onNavigate?: () => void
 }) {
@@ -124,7 +175,9 @@ function SideNav({ workspace, user, basePath, active, module, account, hideLinks
         {module?.label ?? (account ? active.label : user.role_label)}
       </p>
       {hideLinks ? (
-        active.register && (
+        anchors?.length ? (
+          <AnchorLinks items={anchors} t={t} rail={rail} onNavigate={onNavigate} />
+        ) : active.register && (
           <Link
             to={{ search: '?register' }}
             onClick={onNavigate}
@@ -300,7 +353,7 @@ function UserMenu({ workspace, user, basePath, onLogout }: {
 function TillGate({ workspace, user, basePath }: { workspace: Workspace; user: Employee; basePath: string }) {
   const t = workspace.theme
   const gated = user.role === 'branch_receptionist' && !!user.branch
-  const { data } = useApi(() => (gated ? bnb.tills() : Promise.resolve(null)), [gated])
+  const { data } = useApi(() => (gated ? bnb.tills({ open: '1' }) : Promise.resolve(null)), [gated])
   const [dismissed, setDismissed] = useState(false)
   if (!gated || !data) return null
   const open = data.find((s) => s.status === 'open')
@@ -525,12 +578,14 @@ function HeaderClock({ className }: { className: string }) {
   )
 }
 
-export function WorkspaceLayout({ workspace, user, basePath, active, module, account, hideLinks, onLogout, children }: Props) {
+export function WorkspaceLayout({ workspace, user, basePath, active, module, account, hideLinks, anchors, onLogout, children }: Props) {
   const t = workspace.theme
   const { resolved } = useTheme()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const bottomItems = (module?.children ?? (account ? [PROFILE_ITEM, ...(workspace.accountNav ?? [])] : workspace.nav)).slice(0, 4)
   const navBase = module ? `${basePath}/${module.slug}` : basePath
+  /** The role's landing page is the dashboard itself — no link back to it there. */
+  const isLanding = !module && !account && active.slug === ''
 
   useEffect(() => {
     if (!drawerOpen) return
@@ -563,7 +618,7 @@ export function WorkspaceLayout({ workspace, user, basePath, active, module, acc
           <BrandMark workspace={workspace} basePath={basePath} compact />
         </div>
         <div className="flex-1 overflow-y-auto overflow-x-visible">
-          <SideNav workspace={workspace} user={user} basePath={basePath} active={active} module={module} account={account} hideLinks={hideLinks} rail />
+          <SideNav workspace={workspace} user={user} basePath={basePath} active={active} module={module} account={account} hideLinks={hideLinks} anchors={anchors} rail />
         </div>
         <SidebarUser workspace={workspace} user={user} basePath={basePath} active={active} rail onLogout={onLogout} />
       </motion.aside>
@@ -595,7 +650,7 @@ export function WorkspaceLayout({ workspace, user, basePath, active, module, acc
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto">
-                <SideNav workspace={workspace} user={user} basePath={basePath} active={active} module={module} account={account} hideLinks={hideLinks} onNavigate={() => setDrawerOpen(false)} />
+                <SideNav workspace={workspace} user={user} basePath={basePath} active={active} module={module} account={account} hideLinks={hideLinks} anchors={anchors} onNavigate={() => setDrawerOpen(false)} />
               </div>
               <SidebarUser workspace={workspace} user={user} basePath={basePath} active={active} onNavigate={() => setDrawerOpen(false)} onLogout={onLogout} />
             </motion.aside>
@@ -619,6 +674,16 @@ export function WorkspaceLayout({ workspace, user, basePath, active, module, acc
               </p>
               <h1 className={`truncate text-lg leading-tight sm:text-xl ${t.heading}`}>{active.label}</h1>
             </div>
+            {!isLanding && (
+              <Link
+                to={basePath}
+                aria-label="Back to dashboard"
+                className={`flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition ${t.iconButton}`}
+              >
+                <LayoutDashboard className="size-4" />
+                <span className="hidden sm:inline">Dashboard</span>
+              </Link>
+            )}
             <HeaderClock className={t.muted} />
             <ThemeToggle className={t.iconButton} />
             <UserMenu workspace={workspace} user={user} basePath={basePath} onLogout={onLogout} />

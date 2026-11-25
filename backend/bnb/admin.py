@@ -46,7 +46,7 @@ class BranchAdmin(admin.ModelAdmin):
 @admin.register(Room)
 class RoomAdmin(admin.ModelAdmin):
     ordering = ["branch", "name"]
-    list_display = ["name", "branch", "room_type", "capacity", "price", "status", "created_at"]
+    list_display = ["name", "branch", "room_type", "capacity", "price", "day_rest_price", "commission", "status", "created_at"]
     list_display_links = ["name"]
     list_filter = ["status", "room_type", "branch"]
     search_fields = ["name", "branch__name"]

@@ -46,9 +46,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     const refresh = tokens.refresh
+    /** Call logout before clearing — the request needs the access token
+     *  attached for the refresh token to be blacklisted server-side. */
+    if (refresh) await api.post('/auth/logout/', { refresh }).catch(() => undefined)
     tokens.clear()
     setUser(null)
-    if (refresh) await api.post('/auth/logout/', { refresh }).catch(() => undefined)
   }, [])
 
   const reload = useCallback(async () => {

@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { AlarmClock, ArrowUpRight, BadgeCheck, Ban, BedDouble, BellRing, Building2, CalendarCheck, Clock, Construction, Hash, Hourglass, Mail, MapPin, Minus, Phone, TrendingDown, TrendingUp, Users, X, type LucideIcon } from 'lucide-react'
+import { AlarmClock, ArrowUpRight, BadgeCheck, Ban, BedDouble, BellRing, Building2, CalendarCheck, Clock, Construction, Contact, Hash, History, Hourglass, Mail, MapPin, Minus, Phone, Ticket, TrendingDown, TrendingUp, Users, Wallet, X, type LucideIcon } from 'lucide-react'
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { Empty, LinkButton, Loading, Panel, Pill, type Tone } from '../components/hr/ui'
@@ -18,6 +18,7 @@ import type { RegisterMode } from './ReservationsPage'
 // layout plus the page being opened, not every page in the app.
 const AccountsPage = lazy(() => import('./AccountsPage'))
 const BranchSettingsPage = lazy(() => import('./BranchSettingsPage'))
+const BranchSetupPage = lazy(() => import('./BranchSetupPage'))
 const CheckInPage = lazy(() => import('./CheckInPage'))
 const ClientsPage = lazy(() => import('./ClientsPage'))
 const ExtraPackagesPage = lazy(() => import('./ExtraPackagesPage'))
@@ -53,6 +54,16 @@ const MOVED_REPORTS: Record<string, string> = {
   'referral-report': 'referrals',
   'package-report': 'packages',
 }
+
+/** A client portal's own sections — the sidebar swaps its nav links for these
+ *  anchors while a portal is open (ids match the sections in ClientsPage). */
+const CLIENT_PORTAL_LINKS: { id: string; label: string; icon: LucideIcon }[] = [
+  { id: 'cp-current', label: 'Current package', icon: BedDouble },
+  { id: 'cp-profile', label: 'Profile', icon: Contact },
+  { id: 'cp-vouchers', label: 'Vouchers', icon: Ticket },
+  { id: 'cp-transactions', label: 'Transactions', icon: Wallet },
+  { id: 'cp-history', label: 'Stay history', icon: History },
+]
 
 function Overview({ workspace, user, basePath }: { workspace: Workspace; user: Employee; basePath: string }) {
   const t = workspace.theme
@@ -749,6 +760,13 @@ export default function RolePage() {
       : [...workspace.nav, ...(workspace.accountNav ?? [])].find((n) => n.slug === section) ?? workspace.nav[0]
   const module = top.children?.length ? top : undefined
   const active = module ? module.children!.find((c) => c.slug === subSlug) ?? module.children![0] : top
+  /** A client portal (…/clients/<key>, …/guest-history/<key>) is a destination
+   *  of its own — the sidebar shows the portal's section anchors. Client keys
+   *  are the only sub-slugs carrying a prefix (id:, ph:, em:, nm:). */
+  const portal =
+    !!module &&
+    (module.slug === 'clients' || module.slug === 'guest-history') &&
+    /^[a-z]+:/.test(subSlug)
   /** Account pages (profile, settings) sit outside the workspace nav — swap the sidebar links. */
   const account = !module && (top === PROFILE_ITEM || (workspace.accountNav ?? []).includes(top))
   /** Receptionist and manager sections are modules whose sidebar shows links unique to that page. */
@@ -790,6 +808,8 @@ export default function RolePage() {
   else if (recep?.slug === 'tickets' || mgr?.slug === 'tickets')
     content = <TicketsPage item={active} t={workspace.theme} me={user} view={active.slug === 'register' ? 'register' : 'list'} />
   else if (recep?.slug === 'room-availability') content = <RoomAvailabilityPage item={active} t={workspace.theme} me={user} />
+  /** Receptionists don't clock in — the till page is their shift start/end. */
+  else if (recep?.slug === 'till') content = <AccountsPage item={{ ...active, slug: 'counter' }} t={workspace.theme} me={user} />
   else if (recep?.slug === 'accounts') content = <AccountsPage item={active} t={workspace.theme} me={user} />
   else if (recep?.slug === 'reports') content = <ReportsPage item={active} t={workspace.theme} me={user} />
   else if (mgr?.slug === 'room-management')
@@ -799,7 +819,14 @@ export default function RolePage() {
   else if (mgr?.slug === 'branch-settings' || (user.role === 'branch_manager' && active.slug === 'branch-settings'))
     content = <BranchSettingsPage item={active} t={workspace.theme} />
   else if (mgr?.slug === 'team-shifts')
-    content = <TeamShiftsPage item={active} t={workspace.theme} me={user} view={active.slug === 'register' ? 'register' : active.slug === 'tasks' ? 'tasks' : 'list'} />
+    content = (
+      <TeamShiftsPage
+        item={active}
+        t={workspace.theme}
+        me={user}
+        view={active.slug === 'register' ? 'register' : active.slug === 'tasks' ? 'tasks' : active.slug === 'pending-approval' ? 'pending' : 'list'}
+      />
+    )
   else if (mgr?.slug === 'branch-bookings')
     content =
       active.slug === 'new' ? (
@@ -807,6 +834,8 @@ export default function RolePage() {
       ) : (
         <ReservationsPage item={active} t={workspace.theme} me={user} />
       )
+  else if (user.role === 'admin' && module?.slug === 'branch-setup')
+    content = <BranchSetupPage item={active} t={workspace.theme} me={user} />
   else if (module)
     content = active.slug
       ? <Section workspace={workspace} item={active} />
@@ -818,12 +847,21 @@ export default function RolePage() {
   return (
     <WorkspaceLayout
       workspace={workspace} user={user} basePath={basePath}
-      /** The main nav lives on the dashboard and module links on the module's
-       *  landing page — inside a sub-page the sidebar shows only a back link. */
       active={active} module={module} account={account}
-      /** Reports keeps its link list visible on sub-pages — it's a switcher,
-       *  not a single-purpose sub-page. */
-      hideLinks={!!module && !!subSlug && module.slug !== 'reports'}
+      /** The main nav lives on the dashboard and module links on the module's
+       *  landing page — inside a sub-page the sidebar shows only a back link.
+       *  A client portal swaps in its own section anchors; reports keeps its
+       *  link list visible on sub-pages — it's a switcher, not a
+       *  single-purpose sub-page. Guest history's stay-type links are the
+       *  same. */
+      anchors={portal ? CLIENT_PORTAL_LINKS : undefined}
+      hideLinks={
+        !!module && !!subSlug &&
+        (portal ||
+          (module.slug === 'guest-history'
+            ? !module.children!.some((c) => c.slug === subSlug)
+            : module.slug !== 'reports'))
+      }
       onLogout={logout}
     >
       <Suspense fallback={<div className="grid min-h-[40vh] place-items-center"><Loading t={workspace.theme} /></div>}>

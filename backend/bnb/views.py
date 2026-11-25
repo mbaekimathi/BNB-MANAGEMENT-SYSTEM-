@@ -5,7 +5,7 @@ from math import ceil
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import BooleanField, Case, CharField, Count, DecimalField, Exists, ExpressionWrapper, F, Func, IntegerField, Max, Min, OuterRef, Q, Subquery, Sum, Value, When
-from django.db.models.functions import Ceil, Coalesce, Concat, Greatest, Lower, Replace, Trim
+from django.db.models.functions import Ceil, Coalesce, Concat, Greatest, Lower, Now, Replace, Trim
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
@@ -20,7 +20,7 @@ from hr.models import Attendance
 
 from .models import Booking, BookingPackage, BookingPayment, Branch, ClientSuspension, Expense, ExtraPackage, Referral, Room, StockPurchase, Supplier, Ticket, TillSession, Voucher
 from .permissions import BNB_ROLES, CanManageAccounts, CanManageBookings, CanManageBranchProfile, CanManagePackages, CanManageRooms, CanManageTickets, IsBnBStaff, TillOwnerWriteOnly
-from .serializers import AddPackageSerializer, BookingSerializer, BranchProfileSerializer, BranchSerializer, ClientProfileSerializer, ExpenseSerializer, ExtraPackageSerializer, PayBookingSerializer, ReferralSerializer, RoomChangeSerializer, RoomSerializer, StockPurchaseSerializer, SupplierSerializer, TicketSerializer, TillCloseSerializer, TillDrawingSerializer, TillSessionSerializer, _clear_prefetch, _client_key_of, _lock_rooms, _room_clash
+from .serializers import AddPackageSerializer, BookingSerializer, BranchProfileSerializer, BranchSerializer, CancelBookingSerializer, ClientProfileSerializer, ExpenseSerializer, ExtraPackageSerializer, PayBookingSerializer, ReferralSerializer, RoomChangeSerializer, RoomSerializer, StockPurchaseSerializer, SupplierSerializer, TicketSerializer, TillCloseSerializer, TillDrawingSerializer, TillSessionSerializer, _clear_prefetch, _client_key_of, _lock_rooms, _room_clash
 
 MAX_LIST_LIMIT = 500
 
@@ -318,7 +318,48 @@ class BookingViewSet(
 
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):
-        return self._transition(request, [Booking.Status.RESERVED, Booking.Status.OCCUPIED], Booking.Status.CANCELLED)
+        """Cancel a live booking. `settle` decides what happens to money already
+        collected — 'refund' hands the paid balance back through a channel (the
+        till must be open), 'voucher' turns it into a credit voucher the guest
+        redeems on a future stay; the default keeps it on record as a refund due."""
+        ser = CancelBookingSerializer(data=request.data or {})
+        ser.is_valid(raise_exception=True)
+        vd = ser.validated_data
+        with transaction.atomic():
+            booking = get_object_or_404(self.get_queryset().select_for_update(), pk=self.kwargs["pk"])
+            self.check_object_permissions(request, booking)
+            if booking.status not in Booking.ACTIVE_STATUSES:
+                raise serializers.ValidationError(
+                    {"detail": f"This booking is {booking.get_status_display().lower()}."}
+                )
+            settle = vd.get("settle") or "keep"
+            paid = (booking.deposit or Decimal(0)) + sum(p.amount for p in booking.payments.all())
+            if settle in ("refund", "voucher") and paid <= 0:
+                raise serializers.ValidationError(
+                    {"settle": "Nothing was collected on this booking — just cancel it."}
+                )
+            method, ref = vd.get("method"), (vd.get("reference") or "").strip()
+            if settle == "refund":
+                if not method:
+                    raise serializers.ValidationError({"method": "Pick how the refund leaves."})
+                # Money leaving the till lands inside a session, like every other payment.
+                if not self._till_open(booking.branch):
+                    raise serializers.ValidationError(
+                        {"detail": "The till is closed — open it on the Counter page first."}
+                    )
+                BookingPayment.objects.create(
+                    booking=booking, amount=-paid, method=method,
+                    reference=ref or "Cancellation refund",
+                )
+            elif settle == "voucher":
+                Voucher.objects.create(
+                    branch=booking.branch, booking=booking,
+                    amount=paid, guest_name=booking.guest_name, guest_phone=booking.guest_phone,
+                )
+            booking.status = Booking.Status.CANCELLED
+            booking.save(update_fields=["status", "updated_at"])
+        _clear_prefetch(booking)
+        return Response(self.get_serializer(booking).data)
 
     @action(detail=True, methods=["post"], url_path="change-room")
     def change_room(self, request, pk=None):
@@ -521,6 +562,7 @@ class BookingViewSet(
             payment = BookingPayment.objects.create(
                 booking=booking, amount=vd["amount"], method=vd["method"],
                 reference=(vd.get("reference") or "").strip() or ("Stay extension" if extra else "Top-up"),
+                paid_at=vd.get("paid_at"),
             )
 
         _clear_prefetch(booking)
@@ -661,6 +703,8 @@ class BookingViewSet(
                 last_visit=Max("start"),
                 since=Min("created_at"),
                 in_house=flag(Q(status=Booking.Status.OCCUPIED)),
+                has_reservation=flag(Q(status=Booking.Status.RESERVED)),
+                has_day_rest=flag(~cancelled & Q(kind=Booking.Kind.DAY_REST)),
                 in_range=flag(overlap),
                 visits=Sum(Case(When(overlap & ~cancelled, then=Value(1)), default=Value(0), output_field=IntegerField())),
                 suspended=Max("susp", output_field=BooleanField()),
@@ -920,14 +964,42 @@ class TillViewSet(
 
     def get_queryset(self):
         user = self.request.user
-        qs = TillSession.objects.select_related(
-            "branch", "opened_by", "closed_by"
-        ).prefetch_related("drawings__created_by")
+        # Cash-in totals annotated as correlated subqueries — without them the
+        # serializer runs ~4 payment queries per session (an N+1 that made the
+        # tills list take ~1000 queries once sessions accumulated).
+        cash = (
+            BookingPayment.objects.filter(
+                booking__branch=OuterRef("branch"),
+                method=BookingPayment.Method.CASH,
+                created_at__gte=OuterRef("opened_at"),
+                created_at__lt=Coalesce(OuterRef("closed_at"), Now()),
+            )
+            .order_by()
+            .values("booking__branch")
+        )
+        qs = (
+            TillSession.objects.select_related("branch", "opened_by", "closed_by")
+            .prefetch_related("drawings__created_by")
+            .annotate(
+                _cash_in=Coalesce(
+                    Subquery(cash.annotate(s=Sum("amount")).values("s"), output_field=_MONEY),
+                    Value(0), output_field=_MONEY,
+                ),
+                _cash_in_count=Coalesce(
+                    Subquery(cash.annotate(n=Count("id")).values("n"), output_field=IntegerField()),
+                    Value(0), output_field=IntegerField(),
+                ),
+            )
+        )
         if user.role in BNB_ROLES:
             if branch := self.request.query_params.get("branch"):
                 qs = qs.filter(branch_id=branch)
-            return qs
-        return _limit(self.request, qs.filter(branch=user.branch))
+        else:
+            qs = qs.filter(branch=user.branch)
+        # Popups only need the open session — `?open=1` skips the history.
+        if self.request.query_params.get("open"):
+            qs = qs.filter(closed_at__isnull=True)
+        return _limit(self.request, qs)
 
     def get_serializer_context(self):
         ctx = super().get_serializer_context()

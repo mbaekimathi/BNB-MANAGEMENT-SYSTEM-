@@ -304,16 +304,17 @@ def seed_bookings(branch, desk_user, rooms, busy):
                 )
 
     def bill_of(b):
-        days = {b.room_id: 1 if b.kind == Booking.Kind.DAY_REST else
+        day_rest = b.kind == Booking.Kind.DAY_REST
+        days = {b.room_id: 1 if day_rest else
                 max(1, round((b.end - b.start).total_seconds() / 86400))}
-        prices = {b.room_id: b.room.price}
+        prices = {b.room_id: (b.room.day_rest_price or b.room.price) if day_rest else b.room.price}
         for c in b.companions.all():
             if not c.room_id:
                 continue
             s, e = c.start or b.start, c.end or b.end
-            d = 1 if b.kind == Booking.Kind.DAY_REST else max(1, round((e - s).total_seconds() / 86400))
+            d = 1 if day_rest else max(1, round((e - s).total_seconds() / 86400))
             days[c.room_id] = max(days.get(c.room_id, 0), d)
-            prices[c.room_id] = c.room.price
+            prices[c.room_id] = (c.room.day_rest_price or c.room.price) if day_rest else c.room.price
         return sum(prices[r] * n for r, n in days.items()) + sum(
             p.amount for p in b.extra_packages.all())
 

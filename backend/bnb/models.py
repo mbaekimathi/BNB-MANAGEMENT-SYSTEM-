@@ -131,6 +131,8 @@ class Room(models.Model):
         TWIN = "twin", "Twin"
         QUEEN = "queen", "Queen"
         KING = "king", "King"
+        DELUXE = "deluxe", "Deluxe"
+        EXECUTIVE = "executive", "Executive"
         SUITE = "suite", "Suite"
         FAMILY = "family", "Family"
 
@@ -139,6 +141,14 @@ class Room(models.Model):
     room_type = models.CharField(max_length=20, choices=Type.choices, default=Type.DOUBLE)
     capacity = models.PositiveSmallIntegerField("guest capacity", default=2)
     price = models.DecimalField("nightly rate", max_digits=10, decimal_places=2)
+    day_rest_price = models.DecimalField(
+        "flat day-rest rate", max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="What a day rest bills — blank falls back to the nightly rate.",
+    )
+    commission = models.DecimalField(
+        "commission per booking", max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="Commission this room pays out on a booking — blank means none.",
+    )
     description = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
     status_reason = models.CharField("suspension or maintenance reason", max_length=255, blank=True)
@@ -469,10 +479,16 @@ class BookingPayment(models.Model):
     method = models.CharField(max_length=20, choices=Method.choices)
     receipt_number = models.CharField("receipt number", max_length=12, unique=True, null=True, editable=False)
     reference = models.CharField("receipt or transaction reference", max_length=60, blank=True)
+    # When the money actually moved — blank means it was paid as it was recorded.
+    paid_at = models.DateTimeField("time the payment was made", null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["created_at"]
+        indexes = [
+            # Till reports sum a method's payments inside each session's window.
+            models.Index(fields=["booking", "method", "created_at"], name="payment_booking_method_time"),
+        ]
 
     def __str__(self):
         payer = self.companion.name if self.companion_id else self.booking.guest_name

@@ -10,7 +10,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from accounts.models import User
+from accounts.models import User, six_digit_code
 from accounts.serializers import UserSerializer
 
 from .models import Attendance, LeaveRequest, PayrollEntry, TaskAssignment, TaskType
@@ -18,6 +18,7 @@ from .permissions import IsActiveStaff, IsBranchManager, IsHRStaff
 from .serializers import (
     AttendanceSerializer,
     EmployeeBriefSerializer,
+    EmployeeCreateSerializer,
     EmployeeUpdateSerializer,
     LeaveRequestSerializer,
     PayrollEntrySerializer,
@@ -76,9 +77,16 @@ class HRSummaryView(APIView):
         })
 
 
-class EmployeeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
+class EmployeeViewSet(
+    mixins.ListModelMixin,
+    mixins.CreateModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
     permission_classes = [IsHRStaff]
     http_method_names = ["get", "patch", "post"]
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser]
 
     def get_queryset(self):
         qs = User.objects.select_related("branch")
@@ -97,7 +105,33 @@ class EmployeeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.U
     def get_serializer_class(self):
         if self.action == "choices":
             return EmployeeBriefSerializer
+        if self.action == "create":
+            return EmployeeCreateSerializer
         return EmployeeUpdateSerializer if self.action in ("update", "partial_update") else UserSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        return Response(UserSerializer(user, context={"request": request}).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["get"], url_path="code-check")
+    def code_check(self, request):
+        """Live availability check for a sign-in code while a form is being filled."""
+        code = request.query_params.get("code", "")
+        try:
+            six_digit_code(code)
+        except DjangoValidationError as exc:
+            return Response({"detail": exc.messages[0]}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"code": code, "available": not User.objects.filter(code=code).exists()})
+
+    @action(detail=False, methods=["get"], url_path="email-check")
+    def email_check(self, request):
+        """Live availability check for a personal email while a form is being filled."""
+        email = (request.query_params.get("email") or "").strip().lower()
+        if not email:
+            return Response({"detail": "Send an email to check."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"email": email, "available": not User.objects.filter(email__iexact=email).exists()})
 
     @action(detail=False)
     def choices(self, request):
@@ -175,10 +209,15 @@ class BranchTeamViewSet(
         user = serializer.save()
         return Response(UserSerializer(user, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
-    def _set_status(self, request, new_status):
+    def _set_status(self, request, new_status, role=None):
         user = self.get_object()
+        if new_status == User.Status.SUSPENDED and user.status != User.Status.ACTIVE:
+            raise serializers.ValidationError({"detail": "Only approved staff can be suspended."})
+        data = {"status": new_status}
+        if role:
+            data["role"] = role
         serializer = TeamMemberUpdateSerializer(
-            user, data={"status": new_status}, partial=True, context={"request": request}
+            user, data=data, partial=True, context={"request": request}
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -186,7 +225,10 @@ class BranchTeamViewSet(
 
     @action(detail=True, methods=["post"])
     def activate(self, request, pk=None):
-        return self._set_status(request, User.Status.ACTIVE)
+        role = request.data.get("role")
+        if role and role not in User.Role.values:
+            raise serializers.ValidationError({"role": "Unknown role."})
+        return self._set_status(request, User.Status.ACTIVE, role)
 
     @action(detail=True, methods=["post"])
     def suspend(self, request, pk=None):

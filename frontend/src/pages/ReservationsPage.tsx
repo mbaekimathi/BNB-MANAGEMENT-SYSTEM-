@@ -236,7 +236,7 @@ export function RegisterClientPage({ item, t, me, back, mode = 'reserve', doneLa
   const pkgs = useApi(bnb.packages)
   /** Check-ins/day rests — and any money collected — need the counter till open.
    *  While another receptionist's session runs, this desk is view-only. */
-  const tills = useApi(bnb.tills)
+  const tills = useApi(() => bnb.tills({ open: '1' }))
   const navigate = useNavigate()
   const live = useMemo(() => (data ?? []).filter((b) => b.status === 'reserved' || b.status === 'occupied'), [data])
   const clients = useMemo(() => clientDirectory(data ?? []), [data])
@@ -689,7 +689,7 @@ const emptyCompanion = (): Companion => ({
 
 /** One payment row's editable fields on the payment card — an untouched field
  *  falls back to the room-holder's full charge paid in cash. */
-type PayEdit = { amount?: string; method?: PaymentMethod | ''; reference?: string }
+type PayEdit = { amount?: string; method?: PaymentMethod | ''; reference?: string; paid_at?: string }
 
 /** Wizard card transition — the card flips around its vertical axis, the direction
  *  following the navigation (next tips it left, back tips it right). */
@@ -742,6 +742,8 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
   const [form, setForm] = useState(() => ({ ...blank, start: localDT(new Date()) }))
   const [more, setMore] = useState(false)
   const [roomType, setRoomType] = useState('')
+  // Live search inside the room picker — reset whenever the popup changes guest.
+  const [roomQ, setRoomQ] = useState('')
   const [companions, setCompanions] = useState<Companion[]>([])
   const [errors, setErrors] = useState<FieldErrors>({})
   const [message, setMessage] = useState('')
@@ -765,6 +767,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
   const [picked, setPicked] = useState<Record<number, number[]>>({})
 
   useEffect(() => {
+    setRoomQ('')
     if (editing === null) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setEditing(null)
     window.addEventListener('keydown', onKey)
@@ -880,16 +883,21 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
     return { s, e: s ? new Date(s.getTime() + d * unitMs) : null, d }
   }
 
-  // Room ids blocked by live bookings over a period — a room can't be booked over a live booking.
-  const busyFor = (s: Date | null, e: Date | null) => {
-    const taken = new Set<number>()
+  // Room ids blocked by live bookings over a period — a room can't be booked
+  // over a live booking. The map keeps the strongest blocker per room
+  // ('occupied' beats 'reserved') so the picker can order and label them.
+  const blockersFor = (s: Date | null, e: Date | null) => {
+    const taken = new Map<number, BookingStatus>()
     if (s && e) {
       for (const b of bookings) {
-        if (new Date(b.start) < e && new Date(b.end) > s) taken.add(b.room)
+        if (new Date(b.start) < e && new Date(b.end) > s) {
+          if (b.status === 'occupied' || taken.get(b.room) !== 'occupied') taken.set(b.room, b.status)
+        }
       }
     }
     return taken
   }
+  const busyFor = (s: Date | null, e: Date | null) => new Set(blockersFor(s, e).keys())
   const busyRooms = useMemo(
     () => busyFor(start, end),
     [bookings, form.start, days, hours], // eslint-disable-line react-hooks/exhaustive-deps -- start/end derive from form.start+span
@@ -906,8 +914,9 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
     return [...seen.entries()].map(([value, label]) => ({ value, label }))
   }, [rooms])
 
-  /** A room's charge for `d` nights — a day rest bills a flat rate whatever the hours. */
-  const charge = (r: Room, d: number) => Number(r.price) * (dayRest ? 1 : d)
+  /** A room's charge for `d` nights — a day rest bills its flat rate whatever
+   *  the hours (the room's day-rest rate when set, the nightly rate otherwise). */
+  const charge = (r: Room, d: number) => (dayRest ? Number(r.day_rest_price ?? r.price) : Number(r.price) * d)
 
   // Every room-holder is their own client with their own bill — the payment card
   // collects one row per held room. Party position: 0 = main guest, n = companion n-1.
@@ -935,11 +944,17 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
   const dueFor = (p: { gi: number; room: Room; d: number }) => charge(p.room, p.d) + pkgTotal(p.gi)
   const billTotal = payers.reduce((n, p) => n + dueFor(p), 0)
 
+  // The payment clock — 'now' refreshed once a minute for untouched time-paid fields.
+  const payNow = useNow(60_000)
   /** A payment row's live value — untouched fields default to the full charge,
    *  but the method stays unset until the receptionist picks one. */
   const payRow = (gi: number, due: number) => {
     const e = payEdits[gi] ?? {}
-    return { amount: e.amount ?? (due > 0 ? String(due) : ''), method: e.method ?? '', reference: e.reference ?? '' }
+    return {
+      amount: e.amount ?? (due > 0 ? String(due) : ''), method: e.method ?? '', reference: e.reference ?? '',
+      // Time paid defaults to now (ticking until the receptionist overrides it).
+      paid_at: e.paid_at ?? localDT(new Date(payNow.getTime())),
+    }
   }
   /** Cash moves no paper trail; card/mobile/bank payments do — their transaction
    *  code is compulsory. 'other' keeps it optional. */
@@ -947,12 +962,19 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
   const setPay = <K extends keyof PayEdit>(gi: number, k: K, v: PayEdit[K]) =>
     setPayEdits((m) => ({ ...m, [gi]: { ...(m[gi] ?? {}), [k]: v } }))
 
-  // Check-ins and day rests are paid in full before the room changes hands —
-  // each room-holder's row must reach their own charge.
-  const payFull = payers.every((p) => {
-    const due = dueFor(p)
-    return due <= 0 || Number(payRow(p.gi, due).amount) >= due
-  })
+  // Check-ins and day rests can take any amount — a part-payment leaves the rest
+  // as a balance, an overpayment stays as credit. A row is only wrong when money
+  // is named without a usable method (or code), or the amount isn't a number.
+  const payRowOk = (gi: number, due: number) => {
+    const r = payRow(gi, due)
+    const amt = r.amount.trim()
+    if (!amt) return true
+    if (!(Number(amt) > 0)) return false
+    if (!r.method) return false
+    if (needsRef(r.method) && !r.reference.trim()) return false
+    return true
+  }
+  const payOk = payers.every((p) => payRowOk(p.gi, dueFor(p)))
 
   // Extra guest details stay open once anything is filled or rejected.
   const extras = !!(form.guest_email || form.guest_id_number || form.guest_nationality || form.guest_notes)
@@ -965,7 +987,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
     !chosen && 'room',
     companions.some((c) => !c.name.trim()) && 'each guest\'s name',
     companions.some((c) => !c.room) && 'each guest\'s room',
-    mode !== 'reserve' && !payFull && 'the full payment',
+    mode !== 'reserve' && !payOk && 'the payment details',
   ].filter(Boolean)
 
   async function save(e: FormEvent) {
@@ -1029,7 +1051,10 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
               payments: payers
                 .map((p) => {
                   const r = payRow(p.gi, dueFor(p))
-                  return { guest: p.gi, amount: Number(r.amount), method: r.method as PaymentMethod, reference: r.reference.trim() }
+                  return {
+                    guest: p.gi, amount: Number(r.amount), method: r.method as PaymentMethod, reference: r.reference.trim(),
+                    paid_at: r.paid_at ? new Date(r.paid_at).toISOString() : null,
+                  }
                 })
                 .filter((p) => p.amount > 0),
             }),
@@ -1116,11 +1141,35 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
     : `${dFmt(s)} → ${dFmt(e)} · ${d} ${d === 1 ? 'night' : 'nights'}`
 
   /** Photo-card room grid shared by the main guest's popup and each extra guest's.
-   *  `note` adds a tail to the status line ("main room", "shared with guest 3"). */
-  const roomGrid = (type: string, setType: (v: string) => void, sel: string, ok: (r: Room) => boolean, pick: (id: string) => void, note?: (r: Room) => string) => {
-    const list = type ? rooms.filter((r) => r.room_type === type) : rooms
+   *  `note` adds a tail to the status line ("main room", "shared with guest 3").
+   *  `blockers` maps room id → the live booking holding it over the picked window,
+   *  so the grid can sort free → reserved → occupied → out of service. */
+  const roomGrid = (type: string, setType: (v: string) => void, sel: string, ok: (r: Room) => boolean, pick: (id: string) => void, blockers: Map<number, BookingStatus>, note?: (r: Room) => string) => {
+    const q = roomQ.trim().toLowerCase()
+    const rank = (r: Room) => {
+      if (ok(r)) return 0
+      if (r.status !== 'active') return 3
+      return blockers.get(r.id) === 'reserved' ? 1 : 2
+    }
+    const list = (type ? rooms.filter((r) => r.room_type === type) : [...rooms])
+      .filter((r) => !q || `${r.name} ${r.type_label}`.toLowerCase().includes(q))
+      .sort((a, b) => rank(a) - rank(b))
+    const blockedLabel = (r: Room) => {
+      if (r.status !== 'active') return r.status_label
+      const st = blockers.get(r.id)
+      return st === 'reserved' ? 'Reserved for that period' : st === 'occupied' ? 'Occupied for that period' : 'Booked for that period'
+    }
     return (
       <div className="flex min-w-0 flex-col gap-2">
+        <div className="relative">
+          <Search className={`pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 ${t.muted}`} />
+          <input
+            value={roomQ}
+            onChange={(e) => setRoomQ(e.target.value)}
+            placeholder="Search rooms…"
+            className={`h-9 w-full bg-transparent pl-9 pr-3 text-sm outline-none focus:ring-2 ${t.radius} ${t.chip} ${t.ring}`}
+          />
+        </div>
         <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Room type">
           {[{ value: '', label: 'All types' }, ...roomTypes].map((o) => (
             <button
@@ -1133,7 +1182,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
           ))}
         </div>
         {!list.length ? (
-          <p className={`px-3 py-2.5 text-xs ${t.radius} ${t.chip}`}>No rooms in this category.</p>
+          <p className={`px-3 py-2.5 text-xs ${t.radius} ${t.chip}`}>{q ? 'No rooms match your search.' : 'No rooms in this category.'}</p>
         ) : (
           <div className="grid max-h-72 gap-2 overflow-y-auto pr-1 sm:grid-cols-2" role="radiogroup" aria-label="Room">
             {list.map((r) => {
@@ -1156,12 +1205,12 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold">{r.name}</span>
                     <span className={`block truncate text-[11px] ${selR ? 'opacity-75' : t.muted}`}>
-                      {r.type_label} · {formatMoney(r.price)}/night · sleeps {r.capacity}
+                      {r.type_label} · {formatMoney(dayRest ? (r.day_rest_price ?? r.price) : r.price)}{dayRest ? ' flat' : '/night'} · sleeps {r.capacity}
                     </span>
                     <span className={`mt-0.5 block truncate text-[10px] font-medium uppercase tracking-wide ${
                       free ? (selR ? 'opacity-80' : 'text-emerald-600 dark:text-emerald-400') : 'opacity-60'
                     }`}>
-                      {free ? `Available${extra ? ` · ${extra}` : ''}` : extra || (r.status !== 'active' ? r.status_label : 'Booked for that period')}
+                      {free ? `Available${extra ? ` · ${extra}` : ''}` : extra || blockedLabel(r)}
                     </span>
                   </span>
                   {selR && (
@@ -1230,6 +1279,9 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
     if (!main && !c) return null
     const cStay = c ? cDates(c) : null
     const cBusy = cStay ? busyFor(cStay.s, cStay.e) : new Set<number>()
+    // Which bookings hold each room over this guest's window — drives the
+    // free → reserved → occupied → out-of-service ordering in the picker.
+    const blockers = main ? blockersFor(start, end) : cStay ? blockersFor(cStay.s, cStay.e) : new Map<number, BookingStatus>()
     // A companion's room must be free for their dates, and not already picked
     // by the main guest or another companion — each room-holder is a separate client.
     const cOk = (r: Room) =>
@@ -1287,7 +1339,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
                 </div>
                 <section>
                   <legend className={`mb-2 text-xs font-semibold uppercase tracking-wider ${t.muted}`}>Room</legend>
-                  {roomGrid(roomType, setRoomType, form.room, usableMain, (id) => { put('room', id); clearErr('room') }, (r) => {
+                  {roomGrid(roomType, setRoomType, form.room, usableMain, (id) => { put('room', id); clearErr('room') }, blockers, (r) => {
                     const j = companions.findIndex((c) => Number(c.room) === r.id)
                     return j >= 0 ? `Guest ${j + 2}'s pick` : ''
                   })}
@@ -1337,7 +1389,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
                   <legend className={`mb-2 text-xs font-semibold uppercase tracking-wider ${t.muted}`}>Their room</legend>
                   <div className="flex min-w-0 flex-col gap-2">
                     {roomGrid(
-                      c!.type, (v) => setC(editing, 'type', v), c!.room, cOk, (id) => { setC(editing, 'room', id); clearErr(`c${editing}room`) },
+                      c!.type, (v) => setC(editing, 'type', v), c!.room, cOk, (id) => { setC(editing, 'room', id); clearErr(`c${editing}room`) }, blockers,
                       (r) => r.id === chosen?.id ? 'Main room' : (() => { const j = companions.findIndex((o, x) => x !== editing && Number(o.room) === r.id); return j >= 0 ? `Guest ${j + 2}'s pick` : '' })(),
                     )}
                   </div>
@@ -1622,12 +1674,14 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
       ) : (
         <section>
           <legend className={`mb-2 text-xs font-semibold uppercase tracking-wider ${t.muted}`}>
-            <CreditCard className="mr-1 inline size-3.5" /> {dayRest ? 'Payment — a day rest is paid in full' : 'Payment — due in full on check-in'}
+            <CreditCard className="mr-1 inline size-3.5" /> {dayRest ? 'Payment — collect what the guest pays now' : 'Payment — collect on check-in'}
           </legend>
           <div className="space-y-3">
             {payers.map((p) => {
               const due = dueFor(p)
               const row = payRow(p.gi, due)
+              const paid = Number(row.amount) || 0
+              const bal = due - paid
               return (
                 <div key={p.gi} className={`overflow-hidden ${t.radius} ${t.chip}`}>
                   <p className={`flex items-center gap-2 px-3 py-2 text-xs font-semibold`}>
@@ -1635,16 +1689,15 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
                     <span className="min-w-0 truncate">
                       Guest {p.gi + 1}{p.name ? ` · ${p.name}` : ''} — {p.room.name}
                     </span>
-                    <span className="ml-auto shrink-0 tabular-nums">due {formatMoney(due)}</span>
+                    <span className="ml-auto shrink-0 tabular-nums">
+                      due {formatMoney(due)}
+                      {paid > 0 && bal > 0 && <span className="text-amber-600 dark:text-amber-400"> · balance {formatMoney(bal)}</span>}
+                      {paid > 0 && bal < 0 && <span className="text-emerald-600 dark:text-emerald-400"> · overpaid {formatMoney(-bal)}</span>}
+                    </span>
                   </p>
-                  <div className={`grid gap-4 border-t p-3 ${row.method && row.method !== 'cash' ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} ${t.sidebarDivider}`}>
-                    <Input
-                      t={t} label="Amount received" type="number" min={0} step="0.01" required
-                      value={row.amount} onChange={(e) => { setPay(p.gi, 'amount', e.target.value); clearErr(`p${p.gi}amount`) }}
-                      error={errors[`p${p.gi}amount`]}
-                    />
+                  <div className={`grid gap-4 border-t p-3 sm:grid-cols-2 ${t.sidebarDivider}`}>
                     <Select
-                      t={t} label="Method" value={row.method} required
+                      t={t} label="Method" value={row.method}
                       onChange={(e) => {
                         const m = e.target.value as PaymentMethod | ''
                         setPay(p.gi, 'method', m)
@@ -1657,14 +1710,25 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
                       <option value="" disabled>Pick a method</option>
                       {PAYMENT_METHODS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </Select>
+                    <Input
+                      t={t} label="Amount received" type="number" min={0} step="0.01"
+                      value={row.amount} onChange={(e) => { setPay(p.gi, 'amount', e.target.value); clearErr(`p${p.gi}amount`) }}
+                      error={errors[`p${p.gi}amount`]}
+                    />
                     {row.method !== '' && row.method !== 'cash' && (
                       <Input
                         t={t} label={needsRef(row.method) ? 'Reference' : 'Reference (optional)'} required={needsRef(row.method)}
                         value={row.reference}
-                        onChange={(e) => { setPay(p.gi, 'reference', e.target.value); clearErr(`p${p.gi}reference`) }}
+                        onChange={(e) => { setPay(p.gi, 'reference', e.target.value.toUpperCase()); clearErr(`p${p.gi}reference`) }}
                         error={errors[`p${p.gi}reference`]} placeholder="Transaction / M-Pesa code" autoComplete="off"
                       />
                     )}
+                    <Input
+                      t={t} label="Time paid" type="datetime-local"
+                      value={row.paid_at}
+                      onChange={(e) => { setPay(p.gi, 'paid_at', e.target.value); clearErr(`p${p.gi}paid_at`) }}
+                      error={errors[`p${p.gi}paid_at`]}
+                    />
                   </div>
                 </div>
               )
@@ -1714,7 +1778,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
         ? /^(guest_|guests$|referrer_|companions$)/.test(k) || /^c\d+(name|phone|email)$/.test(k)
         : i === 2
           ? /^(room|start|end|days|hours|companions$)/.test(k) || /^c\d+room$/.test(k)
-          : /^(deposit|payments?|packages|detail)$/.test(k) || /^p\d+(amount|method|reference)$/.test(k)
+          : /^(deposit|payments?|packages|detail)$/.test(k) || /^p\d+(amount|method|reference|paid_at)$/.test(k)
 
   /** Per-card gate — Next only advances when the current card passes its checks. */
   const cardOk = (i: number) => {
@@ -1753,14 +1817,18 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
       if (mode === 'reserve') {
         if (depositAmt.trim() && !(Number(depositAmt) > 0)) errs.deposit = 'Enter a valid deposit amount.'
       } else {
-        // Check-ins and day rests pay the full amount — every room-holder's row
-        // has to reach their own charge before the room changes hands.
+        // Check-ins and day rests take whatever the guest pays — part-payment
+        // leaves a balance, overpayment becomes credit. Only bad rows block:
+        // a money amount without a method (or a required transaction code).
         for (const p of payers) {
           const due = dueFor(p)
           const row = payRow(p.gi, due)
-          if (due <= 0) continue
-          if (!(Number(row.amount) >= due))
-            errs[`p${p.gi}amount`] = Number(row.amount) > 0 ? `The full amount is ${formatMoney(due)}.` : 'Collect the full amount.'
+          const amt = row.amount.trim()
+          if (!amt) continue
+          if (!(Number(amt) > 0)) {
+            errs[`p${p.gi}amount`] = 'Enter a valid amount.'
+            continue
+          }
           if (!row.method) errs[`p${p.gi}method`] = 'Pick the payment method.'
           else if (needsRef(row.method) && !row.reference.trim()) errs[`p${p.gi}reference`] = 'Add the transaction code.'
         }
@@ -1796,7 +1864,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
     !!chosen,
     ...companions.map((c) => !!c.name.trim()),
     ...companions.map((c) => !!c.room),
-    ...(mode === 'reserve' ? [] : [payFull]),
+    ...(mode === 'reserve' ? [] : [payOk]),
   ]
   const pct = Math.round((covered.filter(Boolean).length / covered.length) * 100)
 

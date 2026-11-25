@@ -24,7 +24,7 @@ const EMPTY_FORM: FormState = { category: 'supplies', name: '', amount: '', supp
 export default function Expenses({ t, me }: AccountPageProps) {
   const { data, error, loading, reload, setData } = useApi(bnb.expenses)
   const suppliers = useApi(bnb.suppliers)
-  const tills = useApi(bnb.tills)
+  const tills = useApi(() => bnb.tills({ open: '1' }))
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [errors, setErrors] = useState<FieldErrors>({})
   const [busy, setBusy] = useState(false)

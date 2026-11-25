@@ -12,7 +12,7 @@ import type { NavItem, WorkspaceTheme } from '../lib/workspaces'
 const ROOM_TONE: Record<RoomStatus, Tone> = { active: 'green', maintenance: 'amber', suspended: 'red' }
 const MAX_PHOTOS = 8
 
-const blank = { name: '', room_type: 'double' as RoomType, capacity: '2', price: '', description: '' }
+const blank = { name: '', room_type: 'double' as RoomType, capacity: '2', price: '', day_rest_price: '', commission: '', description: '' }
 
 export default function RoomManagementPage({ item, t, me, view = 'list' }: { item: NavItem; t: WorkspaceTheme; me: Employee; view?: 'list' | 'register' }) {
   const { data, error, loading, reload, setData } = useApi(bnb.rooms)
@@ -119,6 +119,8 @@ export default function RoomManagementPage({ item, t, me, view = 'list' }: { ite
                       <th className={`w-32 ${th}`}>Type</th>
                       <th className={`w-28 ${th}`}>Capacity</th>
                       <th className={`w-28 ${th}`}>Price / night</th>
+                      <th className={`w-28 ${th}`}>Day rest</th>
+                      <th className={`w-28 ${th}`}>Commission</th>
                       <th className={`w-28 ${th}`}>Status</th>
                       <th className={`w-48 ${th}`}>Notes</th>
                       <th className={`w-28 ${th} text-right`}>Actions</th>
@@ -153,6 +155,8 @@ export default function RoomManagementPage({ item, t, me, view = 'list' }: { ite
                             <Users className="mr-1 inline size-3" />{r.capacity} {r.capacity === 1 ? 'guest' : 'guests'}
                           </td>
                           <td className="whitespace-nowrap px-3 py-3 text-xs font-medium">{formatMoney(r.price)}</td>
+                          <td className="whitespace-nowrap px-3 py-3 text-xs">{r.day_rest_price ? formatMoney(r.day_rest_price) : '—'}</td>
+                          <td className="whitespace-nowrap px-3 py-3 text-xs">{r.commission ? formatMoney(r.commission) : '—'}</td>
                           <td className="px-3 py-3"><Pill tone={ROOM_TONE[r.status]}>{r.status_label}</Pill></td>
                           <td className="px-3 py-3 text-xs">
                             {r.status_reason && r.status !== 'active' ? (
@@ -254,7 +258,7 @@ interface ImgItem {
 function RoomFormDialog({ t, editing, onClose, onSaved }: { t: WorkspaceTheme; editing: Room | null; onClose: () => void; onSaved: (r: Room) => void }) {
   const [form, setForm] = useState(() =>
     editing
-      ? { name: editing.name, room_type: editing.room_type, capacity: String(editing.capacity), price: editing.price, description: editing.description, status: editing.status, status_reason: editing.status_reason }
+      ? { name: editing.name, room_type: editing.room_type, capacity: String(editing.capacity), price: editing.price, day_rest_price: editing.day_rest_price ?? '', commission: editing.commission ?? '', description: editing.description, status: editing.status, status_reason: editing.status_reason }
       : { ...blank, status: 'active' as RoomStatus, status_reason: '' },
   )
   const [images, setImages] = useState<ImgItem[]>(() =>
@@ -328,6 +332,8 @@ function RoomFormDialog({ t, editing, onClose, onSaved }: { t: WorkspaceTheme; e
         if (form.room_type !== editing.room_type) changes.room_type = form.room_type
         if (Number(form.capacity) !== editing.capacity) changes.capacity = Number(form.capacity)
         if (Number(form.price) !== Number(editing.price)) changes.price = form.price
+        if (form.day_rest_price !== (editing.day_rest_price ?? '')) changes.day_rest_price = form.day_rest_price
+        if (form.commission !== (editing.commission ?? '')) changes.commission = form.commission
         if (form.description !== editing.description) changes.description = form.description
         if (form.status !== editing.status) changes.status = form.status
         if (form.status_reason !== editing.status_reason) changes.status_reason = form.status_reason
@@ -344,7 +350,7 @@ function RoomFormDialog({ t, editing, onClose, onSaved }: { t: WorkspaceTheme; e
         onSaved(await bnb.updateRoom(editing.id, changes, { newPhotos, removeIds, mainToken }))
       } else {
         onSaved(await bnb.registerRoom(
-          { name: form.name, room_type: form.room_type, capacity: Number(form.capacity), price: form.price, description: form.description },
+          { name: form.name, room_type: form.room_type, capacity: Number(form.capacity), price: form.price, day_rest_price: form.day_rest_price, commission: form.commission, description: form.description },
           images.map((i) => i.file!).filter(Boolean),
         ))
       }
@@ -447,6 +453,8 @@ function RoomFormDialog({ t, editing, onClose, onSaved }: { t: WorkspaceTheme; e
             </Select>
             <Input t={t} label="Guest capacity" type="number" inputMode="numeric" min={1} max={30} value={form.capacity} onChange={set('capacity')} error={errors.capacity} required />
             <Input t={t} label="Nightly rate (KES)" type="number" inputMode="decimal" min={0} step="0.01" placeholder="e.g. 4500" value={form.price} onChange={set('price')} error={errors.price} required />
+            <Input t={t} label="Day-rest rate (KES)" type="number" inputMode="decimal" min={0} step="0.01" placeholder="Same as nightly" value={form.day_rest_price} onChange={set('day_rest_price')} error={errors.day_rest_price} />
+            <Input t={t} label="Commission (KES)" type="number" inputMode="decimal" min={0} step="0.01" placeholder="None" value={form.commission} onChange={set('commission')} error={errors.commission} />
             <label className="flex min-w-0 flex-col gap-1 sm:col-span-2">
               <span className={`text-[11px] font-medium ${t.muted}`}>Description (optional)</span>
               <textarea

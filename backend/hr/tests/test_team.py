@@ -96,6 +96,22 @@ class TeamApiTests(APITestCase):
         self.emp.refresh_from_db()
         self.assertTrue(self.emp.is_active)
 
+    def test_pending_member_can_only_be_approved(self):
+        pending = make("800900", status=User.Status.PENDING, first="Pen")
+        pending.branch = self.branch
+        pending.save()
+        url = f"/api/hr/team/{pending.id}/"
+        # Edits and suspension are blocked until the allocation is approved.
+        self.assertEqual(self.client.patch(url, {"first_name": "Penn"}).status_code, 400)
+        self.assertEqual(self.client.post(f"{url}suspend/").status_code, 400)
+        # Approval unlocks both — and can hand out a branch staff role at once.
+        self.assertEqual(self.client.post(f"{url}activate/", {"role": "admin"}).status_code, 400)
+        r = self.client.post(f"{url}activate/", {"role": "branch_receptionist"})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual((r.json()["status"], r.json()["role"]), ("active", "branch_receptionist"))
+        self.assertEqual(self.client.patch(url, {"first_name": "Penn"}).status_code, 200)
+        self.assertEqual(self.client.post(f"{url}suspend/").status_code, 200)
+
     def test_delete_rules(self):
         self.assertEqual(self.client.delete(f"/api/hr/team/{self.mgr.id}/").status_code, 400)
         self.assertEqual(self.client.delete(f"/api/hr/team/{self.outsider.id}/").status_code, 404)
@@ -176,3 +192,20 @@ class TaskApiTests(APITestCase):
         r = post({"employee_id": self.emp.id, "task_type_id": tt["id"], "date": "2026-11-25",
                   "start": "12:00", "end": "09:00"})
         self.assertIn("end", r.json())
+
+    def test_pending_employee_cant_be_assigned(self):
+        tt = self._make_type()
+        pending = make("800901", status=User.Status.PENDING, first="Pen")
+        pending.branch = self.branch
+        pending.save()
+        r = self.client.post("/api/hr/task-assignments/", {
+            "employee_id": pending.id, "task_type_id": tt["id"], "date": "2026-11-25",
+        })
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("employee_id", r.json())
+        # Once approved, the same assignment goes through.
+        self.client.post(f"/api/hr/team/{pending.id}/activate/")
+        r = self.client.post("/api/hr/task-assignments/", {
+            "employee_id": pending.id, "task_type_id": tt["id"], "date": "2026-11-25",
+        })
+        self.assertEqual(r.status_code, 201, r.content)

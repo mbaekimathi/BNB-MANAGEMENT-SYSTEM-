@@ -115,7 +115,8 @@ const overview = (description: string): NavItem => ({
   description,
 })
 
-/** Self-service clock in/out, available to every role. */
+/** Self-service clock in/out — every role except receptionists, whose till
+ *  session doubles as their shift record. */
 const clockInOut: NavItem = {
   slug: 'check-in',
   label: 'Employee clock in / out',
@@ -124,6 +125,19 @@ const clockInOut: NavItem = {
   description: 'Clock in, track your working time and clock out.',
   children: [
     { slug: '', label: 'Clock in / out', short: 'Clock', icon: ConciergeBell, description: 'Clock in, track your working time and clock out.' },
+  ],
+}
+
+/** Receptionists open/close the till instead of clocking in — the session
+ *  covers attendance, cash, drawings and the till report in one place. */
+const tillInOut: NavItem = {
+  slug: 'till',
+  label: 'Open / close till',
+  short: 'Till',
+  icon: Calculator,
+  description: 'Open the till to start your shift, close it to end — your attendance follows the session.',
+  children: [
+    { slug: '', label: 'Open / close till', short: 'Till', icon: Calculator, description: 'Open the till to start your shift, close it to end — your attendance follows the session.' },
   ],
 }
 
@@ -586,13 +600,17 @@ export const WORKSPACES: Record<Role, Workspace> = {
         children: [
           { slug: '', label: 'Team & shifts', short: 'Team', icon: Users, description: 'Everyone allocated to your branch, plus the tasks you assign them.' },
           { slug: 'tasks', label: 'Tasks', short: 'Tasks', icon: ListChecks, description: 'Hand out tasks to your team and track their progress.' },
+          { slug: 'pending-approval', label: 'Pending approval', short: 'Pending', icon: UserCheck, description: 'New staff allocated to your branch, waiting for your approval.' },
           { slug: 'register', label: 'Register employee', short: 'Register', icon: UserPlus, description: 'Add a staff member to your branch.' },
         ],
       },
       {
         slug: 'guest-history', label: 'Guest history', short: 'History', icon: UserCircle, description: 'Guest history and feedback.',
         children: [
-          { slug: '', label: 'All clients', short: 'Clients', icon: UserCircle, description: 'Guest history and feedback.' },
+          { slug: '', label: 'All clients', short: 'Clients', icon: UserCircle, description: 'Every client who booked at this branch.' },
+          { slug: 'reservations', label: 'Reservations', short: 'Reserved', icon: CalendarCheck, description: 'Clients with upcoming reservations.' },
+          { slug: 'in-house', label: 'In house', short: 'In house', icon: BedDouble, description: 'Clients checked in right now.' },
+          { slug: 'day-rest', label: 'Day rest', short: 'Day rest', icon: Hourglass, description: 'Clients who booked day rests.' },
         ],
       },
       {
@@ -664,7 +682,7 @@ export const WORKSPACES: Record<Role, Workspace> = {
     },
     nav: [
       { ...overview("Today's arrivals, departures and guests in house."), label: 'Front desk', short: 'Front' },
-      clockInOut,
+      tillInOut,
       {
         slug: 'register-client', label: 'Register client', short: 'Register', icon: UserPlus, description: 'Take a reservation, check a guest in or book a day rest.',
         children: [

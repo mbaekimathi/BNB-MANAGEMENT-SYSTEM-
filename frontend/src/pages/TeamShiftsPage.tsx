@@ -29,7 +29,7 @@ const blankSignup: MemberSignup = {
 
 const isPin = (pw: string) => /^\d{6}$/.test(pw)
 
-export default function TeamShiftsPage({ item, t, me, view = 'list' }: { item: NavItem; t: WorkspaceTheme; me: Employee; view?: 'list' | 'register' | 'tasks' }) {
+export default function TeamShiftsPage({ item, t, me, view = 'list' }: { item: NavItem; t: WorkspaceTheme; me: Employee; view?: 'list' | 'register' | 'tasks' | 'pending' }) {
   const { data, error, loading, reload, setData } = useApi(() => hr.team({ sort: 'name' }))
   const typeApi = useApi(hr.taskTypes)
   const [taskQuery, setTaskQuery] = useState<TaskQuery>({ date: todayISO(), status: '' })
@@ -89,7 +89,7 @@ export default function TeamShiftsPage({ item, t, me, view = 'list' }: { item: N
         title={item.label}
         text={item.description}
         actions={
-          me.branch && view !== 'tasks' ? (
+          me.branch && (view === 'list' || view === 'register') ? (
             <Button t={t} onClick={() => navigate(`${listPath}/register`)}>
               <Plus className="size-3.5" /> Register employee
             </Button>
@@ -116,6 +116,18 @@ export default function TeamShiftsPage({ item, t, me, view = 'list' }: { item: N
           onAssign={setAssign}
           flash={taskFlash}
           onFlash={(text, bad = false) => setTaskFlash({ text, bad })}
+        />
+      ) : view === 'pending' ? (
+        <PendingPanel
+          t={t}
+          me={me}
+          onDecided={(u, approved) =>
+            setData((list) =>
+              approved
+                ? list?.map((x) => (x.id === u.id ? u : x)) ?? null
+                : list?.filter((x) => x.id !== u.id) ?? null,
+            )
+          }
         />
       ) : (
         <>
@@ -194,20 +206,24 @@ export default function TeamShiftsPage({ item, t, me, view = 'list' }: { item: N
                           <td className="px-3 py-3 align-middle"><Pill tone={STATUS_TONE[u.status]}>{u.status_label}</Pill></td>
                           <td className="px-3 py-3 align-middle">
                             <div className="flex items-center justify-end gap-1">
-                              <button
-                                type="button" aria-label={`Assign a task to ${u.full_name}`} title="Assign a task"
-                                onClick={() => setAssign({ employee: u })}
-                                className={`grid size-8 place-items-center ${t.radius} ${t.muted} hover:text-sky-500`}
-                              >
-                                <ListChecks className="size-4" />
-                              </button>
-                              <button
-                                type="button" aria-label={`Edit ${u.full_name}`} title="Edit"
-                                onClick={() => setEditing(u)}
-                                className={`grid size-8 place-items-center ${t.radius} ${t.muted} hover:text-sky-500`}
-                              >
-                                <Pencil className="size-4" />
-                              </button>
+                              {u.status === 'active' && (
+                                <>
+                                  <button
+                                    type="button" aria-label={`Assign a task to ${u.full_name}`} title="Assign a task"
+                                    onClick={() => setAssign({ employee: u })}
+                                    className={`grid size-8 place-items-center ${t.radius} ${t.muted} hover:text-sky-500`}
+                                  >
+                                    <ListChecks className="size-4" />
+                                  </button>
+                                  <button
+                                    type="button" aria-label={`Edit ${u.full_name}`} title="Edit"
+                                    onClick={() => setEditing(u)}
+                                    className={`grid size-8 place-items-center ${t.radius} ${t.muted} hover:text-sky-500`}
+                                  >
+                                    <Pencil className="size-4" />
+                                  </button>
+                                </>
+                              )}
                               {manageable(u) && (
                                 <>
                                   <button
@@ -286,6 +302,121 @@ export default function TeamShiftsPage({ item, t, me, view = 'list' }: { item: N
         }}
       />
     </div>
+  )
+}
+
+/** Staff allocated to this branch who still need the manager's approval to sign in. */
+function PendingPanel({ t, me, onDecided }: { t: WorkspaceTheme; me: Employee; onDecided: (u: Employee, approved: boolean) => void }) {
+  const { data, error, loading, reload, setData } = useApi(() => hr.team({ status: 'pending', sort: 'name' }))
+  const [roles, setRoles] = useState<Record<number, Role>>({})
+  const [busy, setBusy] = useState(0)
+  const [flash, setFlash] = useState({ text: '', bad: false })
+
+  async function decide(u: Employee, approve: boolean) {
+    setBusy(u.id)
+    setFlash({ text: '', bad: false })
+    try {
+      if (approve) {
+        const next = await hr.activateMember(u.id, roles[u.id] ?? u.role)
+        setFlash({ text: `${next.full_name} is approved as ${next.role_label} and can sign in now.`, bad: false })
+        onDecided(next, true)
+      } else {
+        await hr.deleteMember(u.id)
+        setFlash({ text: `${u.full_name}'s allocation was declined and the account was removed.`, bad: false })
+        onDecided(u, false)
+      }
+      setData((list) => list?.filter((x) => x.id !== u.id) ?? null)
+    } catch (e) {
+      setFlash({ text: parseApiError(e).message, bad: true })
+    } finally {
+      setBusy(0)
+    }
+  }
+
+  const needsHr = (u: Employee) => u.id === me.id || u.role === 'branch_manager'
+  const th = `px-3 py-2.5 text-left text-[11px] font-medium uppercase tracking-wider ${t.muted}`
+
+  return (
+    <Panel t={t} title={data ? `${data.length} waiting for approval` : 'Waiting for approval'}>
+      <div className="mb-3"><Flash message={flash.text} tone={flash.bad ? 'red' : 'green'} /></div>
+      {error ? (
+        <ErrorNote t={t} message={error} onRetry={reload} />
+      ) : loading && !data ? (
+        <Loading t={t} />
+      ) : !data?.length ? (
+        <Empty
+          t={t}
+          icon={UserCheck}
+          title="No one is waiting"
+          text="Staff allocated to your branch will appear here until you approve them."
+        />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[46rem] table-fixed border-collapse">
+            <thead>
+              <tr className={`border-b ${t.sidebarDivider}`}>
+                <th className={th}>Employee</th>
+                <th className={`w-56 ${th}`}>Contact</th>
+                <th className={`w-40 ${th}`}>Role</th>
+                <th className={`w-28 ${th}`}>Joined</th>
+                <th className={`w-28 ${th}`}>Status</th>
+                <th className={`w-44 ${th} text-right`}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <AnimatePresence initial={false}>
+                {data.map((u, i) => (
+                  <motion.tr
+                    key={u.id}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ delay: Math.min(i, 10) * 0.03, duration: 0.25 }}
+                    className={`border-b transition-colors last:border-b-0 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] ${t.sidebarDivider}`}
+                  >
+                    <td className="max-w-0 px-3 py-3 align-middle">
+                      <Person t={t} user={u} sub={u.code} />
+                    </td>
+                    <td className={`px-3 py-3 align-middle text-xs ${t.muted}`}>
+                      <div className="flex min-w-0 flex-col gap-0.5">
+                        <span className="inline-flex min-w-0 items-center gap-1.5"><Mail className="size-3.5 shrink-0" /><span className="truncate">{u.email}</span></span>
+                        <span className="inline-flex items-center gap-1.5"><Phone className="size-3.5 shrink-0" />{u.phone}</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 align-middle">
+                      {needsHr(u) ? (
+                        <span className={`text-xs ${t.muted}`}>{u.role_label}</span>
+                      ) : (
+                        <Select
+                          t={t}
+                          aria-label={`Role for ${u.full_name}`}
+                          value={roles[u.id] ?? u.role}
+                          onChange={(e) => setRoles((r) => ({ ...r, [u.id]: e.target.value as Role }))}
+                        >
+                          {TEAM_ROLES.map((v) => <option key={v} value={v}>{ROLE_LABELS[v]}</option>)}
+                        </Select>
+                      )}
+                    </td>
+                    <td className={`whitespace-nowrap px-3 py-3 align-middle text-xs ${t.muted}`}>{formatDate(u.created_at)}</td>
+                    <td className="px-3 py-3 align-middle"><Pill tone={STATUS_TONE[u.status]}>{u.status_label}</Pill></td>
+                    <td className="px-3 py-3 align-middle">
+                      {needsHr(u) ? (
+                        <p className={`text-right text-xs ${t.muted}`}>Only HR can approve a branch manager.</p>
+                      ) : (
+                        <div className="flex items-center justify-end gap-2">
+                          <Button t={t} busy={busy === u.id} onClick={() => void decide(u, true)}>Approve</Button>
+                          <Button t={t} variant="danger" disabled={busy === u.id} onClick={() => void decide(u, false)}>Decline</Button>
+                        </div>
+                      )}
+                    </td>
+                  </motion.tr>
+                ))}
+              </AnimatePresence>
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Panel>
   )
 }
 

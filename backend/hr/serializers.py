@@ -127,6 +127,38 @@ class EmployeeUpdateSerializer(serializers.ModelSerializer):
         return UserSerializer(instance, context=self.context).data
 
 
+class EmployeeCreateSerializer(RegisterSerializer):
+    """HR staff register an employee directly — the account starts active and is
+    allocated to a branch right away. Branch roles must name their branch;
+    company roles are never allocated one."""
+    role = serializers.ChoiceField(choices=User.Role.choices, default=User.Role.BRANCH_EMPLOYEE)
+    branch = serializers.PrimaryKeyRelatedField(queryset=Branch.objects.all(), required=False, allow_null=True)
+
+    class Meta(RegisterSerializer.Meta):
+        fields = [*RegisterSerializer.Meta.fields, "role", "branch"]
+
+    def validate_role(self, value):
+        if value == User.Role.ADMIN and self.context["request"].user.role != User.Role.ADMIN:
+            raise serializers.ValidationError("Only an Admin can give someone the Admin role.")
+        return value
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        if attrs.get("role") in BRANCH_ROLES:
+            if attrs.get("branch") is None:
+                raise serializers.ValidationError({"branch": "Choose which branch this person will work at."})
+        else:
+            attrs["branch"] = None
+        return attrs
+
+    def create(self, validated_data):
+        photo = validated_data.pop("photo", None)
+        user = User.objects.create_user(status=User.Status.ACTIVE, **validated_data)
+        if photo:
+            user.photo.save(photo.name, photo, save=True)
+        return user
+
+
 class TeamMemberCreateSerializer(RegisterSerializer):
     """A branch manager registers a staff member directly — the account starts
     active and allocated to the manager's own branch."""
@@ -152,10 +184,17 @@ class TeamMemberCreateSerializer(RegisterSerializer):
 
 class TeamMemberUpdateSerializer(EmployeeUpdateSerializer):
     """Branch managers edit staff at their own branch: no company roles, no
-    branch transfers, no touching other branch managers' role or status."""
+    branch transfers, no touching other branch managers' role or status.
+    Only approved (active) staff can be changed — for anyone else the sole
+    allowed update is the approval itself (status → active)."""
 
     def validate(self, attrs):
         request = self.context["request"]
+        approving = attrs.get("status") == User.Status.ACTIVE and self.instance.status != User.Status.ACTIVE
+        if self.instance.status != User.Status.ACTIVE and not approving:
+            raise serializers.ValidationError(
+                {"detail": "Approve this person first — only approved staff can be edited or suspended."}
+            )
         if self.instance.role == User.Role.BRANCH_MANAGER and (
             attrs.get("role", self.instance.role) != self.instance.role
             or attrs.get("status", self.instance.status) != self.instance.status
@@ -285,6 +324,8 @@ class TaskAssignmentSerializer(_EmployeeLinked):
         task_type = attrs.get("task_type", self.instance.task_type if self.instance else None)
         if employee is not None and employee.branch_id != branch_id:
             raise serializers.ValidationError({"employee_id": "This person doesn't work at your branch."})
+        if "employee" in attrs and attrs["employee"].status != User.Status.ACTIVE:
+            raise serializers.ValidationError({"employee_id": "Only approved staff can be assigned tasks."})
         if task_type is not None and task_type.branch_id != branch_id:
             raise serializers.ValidationError({"task_type_id": "This task type doesn't belong to your branch."})
         return super().validate(attrs)

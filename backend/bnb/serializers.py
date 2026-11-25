@@ -417,7 +417,7 @@ class RoomSerializer(serializers.ModelSerializer):
         model = Room
         fields = [
             "id", "branch", "branch_name", "name", "room_type", "type_label",
-            "capacity", "price", "description", "status", "status_label", "status_reason",
+            "capacity", "price", "day_rest_price", "commission", "description", "status", "status_label", "status_reason",
             "photo", "photos", "new_photos", "remove_photos", "main_photo", "created_at",
         ]
         read_only_fields = ["id", "created_at"]
@@ -431,6 +431,15 @@ class RoomSerializer(serializers.ModelSerializer):
             return None
         return first.thumb.url if first.thumb else (first.image.url if first.image else None)
 
+    def to_internal_value(self, data):
+        # FormData can't send null — an empty optional rate clears to "no override".
+        if hasattr(data, "get") and (data.get("day_rest_price") == "" or data.get("commission") == ""):
+            data = data.copy()
+            for f in ("day_rest_price", "commission"):
+                if data.get(f) == "":
+                    data[f] = None
+        return super().to_internal_value(data)
+
     def validate_name(self, value):
         return value.strip()
 
@@ -442,6 +451,16 @@ class RoomSerializer(serializers.ModelSerializer):
     def validate_price(self, value):
         if value < 0:
             raise serializers.ValidationError("The nightly rate can't be negative.")
+        return value
+
+    def validate_day_rest_price(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError("The day-rest rate can't be negative.")
+        return value
+
+    def validate_commission(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError("The commission can't be negative.")
         return value
 
     def validate_status_reason(self, value):
@@ -597,7 +616,7 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = BookingPayment
         fields = ["id", "guest", "companion", "payer", "amount", "method", "method_label",
-                  "receipt_number", "reference", "created_at"]
+                  "receipt_number", "reference", "paid_at", "created_at"]
         read_only_fields = ["id", "companion", "payer", "method_label", "receipt_number", "created_at"]
 
     def get_payer(self, obj):
@@ -765,20 +784,25 @@ class BookingSerializer(serializers.ModelSerializer):
     def get_bill(self, obj):
         """Estimated charge — every distinct room × its billed nights; a companion's own
         period overrides the booking's, and a shared room bills for the longest stay.
-        A day rest is a flat rate per room whatever the hours."""
+        A day rest is a flat rate per room whatever the hours — the room's own
+        day-rest rate when it has one, the nightly rate otherwise."""
         from math import ceil
-        days, prices = {}, {obj.room_id: obj.room.price if obj.room_id else Decimal(0)}
-        days[obj.room_id] = 1 if obj.kind == Booking.Kind.DAY_REST else self.get_nights(obj)
+        day_rest = obj.kind == Booking.Kind.DAY_REST
+        days, prices = {}, {}
+        if obj.room_id:
+            days[obj.room_id] = 1 if day_rest else self.get_nights(obj)
+            prices[obj.room_id] = (obj.room.day_rest_price or obj.room.price) if day_rest else obj.room.price
         for c in obj.companions.all():
             if not c.room_id:
                 continue
-            if obj.kind == Booking.Kind.DAY_REST:
+            if day_rest:
                 d = 1
             else:
                 s, e = c.start or obj.start, c.end or obj.end
                 d = max(1, ceil((e - s).total_seconds() / 86400))
             days[c.room_id] = max(days.get(c.room_id, 0), d)
-            prices[c.room_id] = c.room.price if c.room else Decimal(0)
+            prices[c.room_id] = (c.room.day_rest_price or c.room.price) if day_rest and c.room else (
+                c.room.price if c.room else Decimal(0))
         rooms_total = sum(prices.get(rid, Decimal(0)) * n for rid, n in days.items())
         # Extra packages bill on top of the rooms — the snapshot price on each row.
         return str(rooms_total + sum(p.amount for p in obj.extra_packages.all()))
@@ -1102,6 +1126,17 @@ class RoomChangeSerializer(serializers.Serializer):
     reference = serializers.CharField(required=False, allow_blank=True, max_length=60)
 
 
+class CancelBookingSerializer(serializers.Serializer):
+    """What happens to money already collected when a booking is cancelled —
+    'refund' hands the paid balance back through a channel (the till must be
+    open), 'voucher' turns it into a credit voucher the guest redeems on a
+    future stay; 'keep' leaves it on record as a refund due."""
+
+    settle = serializers.ChoiceField(choices=["keep", "refund", "voucher"], required=False, default="keep")
+    method = serializers.ChoiceField(choices=BookingPayment.Method.choices, required=False)
+    reference = serializers.CharField(required=False, allow_blank=True, max_length=60)
+
+
 class PayBookingSerializer(serializers.Serializer):
     """A top-up on a live booking — one new payment row. `extend_nights` also
     buys extra nights on the same room when it's free past checkout."""
@@ -1109,6 +1144,8 @@ class PayBookingSerializer(serializers.Serializer):
     amount = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal("0.01"))
     method = serializers.ChoiceField(choices=BookingPayment.Method.choices)
     reference = serializers.CharField(required=False, allow_blank=True, max_length=60)
+    # When the money actually moved — blank means it was paid as it was recorded.
+    paid_at = serializers.DateTimeField(required=False, allow_null=True)
     # Buy extra nights on the same room — the payment covers the extension.
     extend_nights = serializers.IntegerField(required=False, min_value=1, max_value=365)
 
@@ -1592,16 +1629,24 @@ class TillSessionSerializer(serializers.ModelSerializer):
     def get_drawings_card(self, obj):
         return str(self._drawings_channel(obj, TillDrawing.Method.VISA))
 
+    def _cash_total(self, obj):
+        # The list queryset annotates `_cash_in`/`_cash_in_count` — instances
+        # built outside it (open/close responses) fall back to asking the DB.
+        if hasattr(obj, "_cash_in"):
+            return Decimal(obj._cash_in)
+        return self._payments(obj).aggregate(s=Sum("amount"))["s"] or Decimal(0)
+
     def get_cash_in(self, obj):
-        total = self._payments(obj).aggregate(s=Sum("amount"))["s"] or Decimal(0)
-        return str(total)
+        return str(self._cash_total(obj))
 
     def get_cash_in_count(self, obj):
+        if hasattr(obj, "_cash_in_count"):
+            return int(obj._cash_in_count)
         return self._payments(obj).count()
 
     def _expected(self, obj):
         """The drawer only holds cash — M-Pesa/card drawings don't touch it."""
-        return obj.opening_float + Decimal(self.get_cash_in(obj)) - Decimal(self.get_drawings_cash(obj))
+        return obj.opening_float + self._cash_total(obj) - Decimal(self.get_drawings_cash(obj))
 
     def get_expected(self, obj):
         return str(self._expected(obj))
