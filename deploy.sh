@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Deploys the latest code from GitHub:
 #   git pull → backend packages → database migrations → static files
-#            → frontend packages → production build (frontend/dist)
+#            → frontend build (only if npm exists — frontend/dist is tracked
+#              in git, so hosts without Node still get the latest bundle)
 #
 # Usage:  bash deploy.sh
 set -euo pipefail
@@ -46,20 +47,27 @@ step "Backend: static files"
 (cd backend && "$VENV_PY" manage.py collectstatic --noinput --clear)
 
 # --- Frontend ---
-step "Frontend: Node packages"
-command -v npm >/dev/null 2>&1 || fail "npm not found — install Node.js 22.12+ from https://nodejs.org/"
-LOCK_HASH="$(hash_of frontend/package-lock.json)"
-FSTAMP="frontend/node_modules/.lock.sha256"
-if [ ! -f "$FSTAMP" ] || [ "$(cat "$FSTAMP")" != "$LOCK_HASH" ]; then
-  (cd frontend && npm install)
-  echo "$LOCK_HASH" > "$FSTAMP"
+# frontend/dist is committed to the repo, so `git pull` already delivered the
+# latest production bundle. Rebuilding is only needed on machines that have
+# Node (e.g. a dev box); shared hosts like cPanel typically don't.
+if command -v npm >/dev/null 2>&1; then
+  step "Frontend: Node packages"
+  LOCK_HASH="$(hash_of frontend/package-lock.json)"
+  FSTAMP="frontend/node_modules/.lock.sha256"
+  if [ ! -f "$FSTAMP" ] || [ "$(cat "$FSTAMP")" != "$LOCK_HASH" ]; then
+    (cd frontend && npm install)
+    echo "$LOCK_HASH" > "$FSTAMP"
+  else
+    echo "Already up to date."
+  fi
+
+  step "Frontend: production build"
+  (cd frontend && npm run build)
 else
-  echo "Already up to date."
+  step "Frontend"
+  echo "npm not found — using the pre-built frontend/dist bundle tracked in git."
 fi
 
-step "Frontend: production build"
-(cd frontend && npm run build)
-
-printf '\n\033[1;32mDeployed.\033[0m Backend migrated + static collected, frontend built to frontend/dist.\n'
+printf '\n\033[1;32mDeployed.\033[0m Backend migrated + static collected, frontend dist is in place.\n'
 echo "Restart your app server to pick up the changes (e.g. touch tmp/restart.txt on Passenger,"
 echo "or restart the Django/systemd service you're using)."
