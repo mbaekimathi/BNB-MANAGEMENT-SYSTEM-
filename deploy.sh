@@ -14,7 +14,14 @@ fail() { printf '\n\033[1;31mERROR: %s\033[0m\n' "$1" >&2; exit 1; }
 hash_of() { sha256sum "$1" | cut -d' ' -f1; }
 
 step "Pulling latest code from GitHub"
+SELF_SUM="$(hash_of "$0" 2>/dev/null || echo x)"
 git pull --ff-only || fail "git pull failed — commit or stash local changes first."
+# git pull may have replaced this very script — re-exec so the rest of the
+# deploy runs the new version, not the stale copy bash already loaded.
+if [ "$(hash_of "$0" 2>/dev/null || echo x)" != "$SELF_SUM" ]; then
+  echo "deploy.sh changed in this pull — restarting with the updated script."
+  exec bash "$0" "$@"
+fi
 
 # --- Backend ---
 # Prefer an already-active virtualenv (e.g. cPanel "Setup Python App"); then backend/.venv.
