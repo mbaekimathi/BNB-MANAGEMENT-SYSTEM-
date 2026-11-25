@@ -81,11 +81,15 @@ input:-webkit-autofill:focus {
 #report-print { display: none; }
 
 @media print {
-  @page { size: A4 landscape; margin: 12mm; }
+  /* Portrait on whatever paper is picked in the print dialog — no fixed
+     paper size, so A4, Letter, etc. all stay upright. */
+  @page { size: portrait; margin: 10mm; }
   body > :not(#report-print) { display: none !important; }
 
   #report-print {
     display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
     font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
     color: #0f172a;
     -webkit-print-color-adjust: exact;
@@ -96,8 +100,15 @@ input:-webkit-autofill:focus {
   #report-print input,
   #report-print select,
   #report-print textarea { display: none !important; }
-  #report-print .overflow-x-auto { overflow: visible !important; }
-  #report-print table { min-width: 0 !important; width: 100% !important; }
+  /* Scroll/clip containers release their content so nothing is cut off. */
+  #report-print .overflow-x-auto,
+  #report-print .overflow-auto,
+  #report-print .overflow-hidden { overflow: visible !important; }
+  /* Tables shrink to the paper width and cells wrap instead of overflowing. */
+  #report-print table { min-width: 0 !important; width: 100% !important; table-layout: auto !important; }
+  #report-print .whitespace-nowrap { white-space: normal !important; }
+  #report-print td, #report-print th { overflow-wrap: break-word; }
+  #report-print .grid { min-width: 0 !important; }
   #report-print thead { display: table-header-group; }
   /* Totals stay at the end of the table — table-footer-group would repeat them on every page. */
   #report-print tfoot { display: table-row-group; }

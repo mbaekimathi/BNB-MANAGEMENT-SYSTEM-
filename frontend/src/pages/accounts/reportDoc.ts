@@ -178,7 +178,7 @@ export async function downloadReportPdf(doc: ReportDocMeta) {
   const root = reportRoot()
   if (!root) return
   const [{ jsPDF }, { autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')])
-  const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' })
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' })
   const W = pdf.internal.pageSize.getWidth()
   const H = pdf.internal.pageSize.getHeight()
   const MX = 34

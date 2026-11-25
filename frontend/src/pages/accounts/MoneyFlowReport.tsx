@@ -12,10 +12,10 @@ import type { AccountPageProps } from './types'
 const PAY_TONE: Record<string, Tone> = { paid: 'green', pending: 'amber' }
 const OUT_HUE: Record<string, Hue> = { Expense: 'rose', Stock: 'violet', Drawing: 'indigo' }
 
-/** One labelled box on the sheet's right column. */
+/** One labelled box in the summary grid below the channel table. */
 function Box({ hue, label, children }: { hue: Hue; label: ReactNode; children: ReactNode }) {
   return (
-    <div className={`border-b ${GRID}`}>
+    <div>
       <p className={`px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider ${BAND[hue]} ${TXT[hue]}`}>{label}</p>
       <div className="divide-y divide-slate-900/5 dark:divide-white/5">{children}</div>
     </div>
@@ -192,87 +192,42 @@ function MoneyFlowBody({ t, me }: AccountPageProps) {
               <span className="text-[11px] text-white/80">Date: <span className="font-semibold text-white">{formatDate(toD)}</span></span>
             </div>
 
-            <div className="grid lg:grid-cols-[minmax(0,1fr)_340px]">
-              <div>
-                {/* ---- Money movement by channel ---- */}
-                <p className={`border-b px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider ${GRID} ${BAND.sky} ${TXT.sky}`}>Money movement by channel</p>
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[36rem] border-collapse text-left text-[11px]">
-                    <thead>
-                      <tr className="bg-slate-100/90 dark:bg-white/[0.06]">
-                        <th className={`${TH} ${t.muted}`}>Channel</th>
-                        <th className={`${TH} text-right ${TXT.emerald}`}>Money in</th>
-                        <th className={`${TH} text-right ${TXT.rose}`}>Money out</th>
-                        <th className={`${TH} text-right ${t.muted}`}>Net flow</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {channels.map((c) => (
-                        <tr key={c.label} className="odd:bg-slate-50/70 hover:bg-sky-500/[0.04] dark:odd:bg-white/[0.02] dark:hover:bg-white/[0.04]">
-                          <td className={`${TD} text-xs font-semibold ${TXT[c.hue]}`}>{c.label}</td>
-                          <td className={`${TD} text-right`}>{money(c.in, 'emerald')}</td>
-                          <td className={`${TD} text-right`}>{money(c.out, 'rose')}</td>
-                          <td className={`${TD} text-right font-semibold`}>{c.in - c.out ? formatMoney(c.in - c.out) : <span className="text-slate-300 dark:text-slate-600">—</span>}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="bg-slate-800 text-xs font-bold text-white dark:bg-slate-900">
-                        <td className={`border-r ${GRID} px-2 py-2.5`}>Total</td>
-                        <td className={`border-r ${GRID} px-2 py-2.5 text-right ${TXT.emerald}`}>{formatMoney(totalIn)}</td>
-                        <td className={`border-r ${GRID} px-2 py-2.5 text-right ${TXT.rose}`}>{formatMoney(totalOut)}</td>
-                        <td className="px-2 py-2.5 text-right">{formatMoney(net)}</td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
+            {/* ---- Money movement by channel ---- */}
+            <p className={`border-b px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider ${GRID} ${BAND.sky} ${TXT.sky}`}>Money movement by channel</p>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[36rem] border-collapse text-left text-[11px]">
+                <thead>
+                  <tr className="bg-slate-100/90 dark:bg-white/[0.06]">
+                    <th className={`${TH} ${t.muted}`}>Channel</th>
+                    <th className={`${TH} text-right ${TXT.emerald}`}>Money in</th>
+                    <th className={`${TH} text-right ${TXT.rose}`}>Money out</th>
+                    <th className={`${TH} text-right ${t.muted}`}>Net flow</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {channels.map((c) => (
+                    <tr key={c.label} className="odd:bg-slate-50/70 hover:bg-sky-500/[0.04] dark:odd:bg-white/[0.02] dark:hover:bg-white/[0.04]">
+                      <td className={`${TD} text-xs font-semibold ${TXT[c.hue]}`}>{c.label}</td>
+                      <td className={`${TD} text-right`}>{money(c.in, 'emerald')}</td>
+                      <td className={`${TD} text-right`}>{money(c.out, 'rose')}</td>
+                      <td className={`${TD} text-right font-semibold`}>{c.in - c.out ? formatMoney(c.in - c.out) : <span className="text-slate-300 dark:text-slate-600">—</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-slate-800 text-xs font-bold text-white dark:bg-slate-900">
+                    <td className={`border-r ${GRID} px-2 py-2.5`}>Total</td>
+                    <td className={`border-r ${GRID} px-2 py-2.5 text-right ${TXT.emerald}`}>{formatMoney(totalIn)}</td>
+                    <td className={`border-r ${GRID} px-2 py-2.5 text-right ${TXT.rose}`}>{formatMoney(totalOut)}</td>
+                    <td className="px-2 py-2.5 text-right">{formatMoney(net)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
 
-                {/* ---- Money out ledger ---- */}
-                <p className={`border-y px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider ${GRID} ${BAND.rose} ${TXT.rose}`}>Money out — expenses, stock &amp; drawings</p>
-                {!report.out.length ? (
-                  <div className="p-5">
-                    <Empty t={t} icon={Banknote} title="Nothing went out in this period" text="Paid expenses, stock purchases and till drawings in the selected dates appear here." />
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[44rem] border-collapse text-left text-[11px]">
-                      <thead>
-                        <tr className="bg-slate-100/90 dark:bg-white/[0.06]">
-                          <th className={`${TH} w-8 text-center ${t.muted}`}>#</th>
-                          <th className={`${TH} ${t.muted}`}>Date</th>
-                          <th className={`${TH} ${t.muted}`}>Type</th>
-                          <th className={`${TH} ${t.muted}`}>Details</th>
-                          <th className={`${TH} ${t.muted}`}>Paid to</th>
-                          <th className={`${TH} ${t.muted}`}>Status</th>
-                          <th className={`${TH} text-right ${TXT.rose}`}>Amount</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {report.out.map((r, i) => (
-                          <tr key={r.id} className={`odd:bg-slate-50/70 hover:bg-sky-500/[0.04] dark:odd:bg-white/[0.02] dark:hover:bg-white/[0.04] ${r.counted ? '' : 'opacity-60'}`}>
-                            <td className={`${TD} text-center font-semibold ${t.muted}`}>{i + 1}</td>
-                            <td className={`${TD} whitespace-nowrap ${t.muted}`}>{fmtDT(r.at)}</td>
-                            <td className={`${TD} font-semibold ${TXT[OUT_HUE[r.kind] ?? 'slate']}`}>{r.kind}</td>
-                            <td className={`${TD} font-medium`}>{r.detail}</td>
-                            <td className={TD}>{r.payee}</td>
-                            <td className={TD}><Pill tone={r.tone}>{r.status}</Pill></td>
-                            <td className={`${TD} text-right font-semibold ${TXT.rose}`}>{formatMoney(r.amount)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr className="bg-slate-800 text-xs font-bold text-white dark:bg-slate-900">
-                          <td className={`border-r ${GRID} px-2 py-2.5`} colSpan={6}>Total money out</td>
-                          <td className={`px-2 py-2.5 text-right ${TXT.rose}`}>{formatMoney(totalOut)}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              {/* ---- Right: summary boxes ---- */}
-              <aside className={`border-t lg:border-l lg:border-t-0 ${GRID}`}>
+            {/* ---- Summary boxes — two columns on wider screens ---- */}
+            <div className="grid sm:grid-cols-2">
+              <div className={`border-b ${GRID} sm:border-r`}>
                 <Box hue="emerald" label="Money in">
                   <Field label={`Guest payments (${report.payments.length})`} value={formatMoney(totalIn - report.deposits)} strong hint={TXT.emerald} />
                   <Field label="Cash" value={formatMoney(report.cashIn)} hint={TXT[CH_HUE.cash]} />
@@ -282,7 +237,8 @@ function MoneyFlowBody({ t, me }: AccountPageProps) {
                   <Field label="Booking deposits" value={formatMoney(report.deposits)} />
                   <Field label={`Extra packages billed (${report.shop.length})`} value={formatMoney(sum(report.shop.map((pk) => Number(pk.amount))))} hint={TXT.teal} />
                 </Box>
-
+              </div>
+              <div className={`border-b ${GRID}`}>
                 <Box hue="rose" label="Money out">
                   <Field label={`Expenses paid (${report.exp.filter((e) => e.payment_status === 'paid').length})`} value={formatMoney(report.expPaid)} hint={TXT.rose} />
                   <Field label={`Stock purchases paid (${report.pur.filter((p) => p.payment_status === 'paid').length})`} value={formatMoney(report.purPaid)} hint={TXT.rose} />
@@ -292,7 +248,8 @@ function MoneyFlowBody({ t, me }: AccountPageProps) {
                   <Field label="— card drawings" value={formatMoney(report.drawCard)} hint={TXT[CH_HUE.visa]} />
                   <Field label="Total out" value={formatMoney(totalOut)} strong />
                 </Box>
-
+              </div>
+              <div className={`border-b ${GRID} sm:border-r`}>
                 <Box hue="amber" label="Commitments &amp; credits">
                   <Field label="Pending expenses" value={formatMoney(report.expPending)} hint={TXT.amber} />
                   <Field label="Pending stock purchases" value={formatMoney(report.purPending)} hint={TXT.amber} />
@@ -300,15 +257,59 @@ function MoneyFlowBody({ t, me }: AccountPageProps) {
                   <Field label="Credit vouchers issued" value={formatMoney(report.credits)} hint={TXT.teal} />
                   <Field label="Gift vouchers redeemed" value={`${report.gifts.length} ${report.gifts.length === 1 ? 'voucher' : 'vouchers'}`} hint={TXT.fuchsia} />
                 </Box>
-
+              </div>
+              <div className={`border-b ${GRID}`}>
                 <Box hue="indigo" label="Net position for the period">
                   <Field label="Money in" value={formatMoney(totalIn)} hint={TXT.emerald} />
                   <Field label="Money out" value={formatMoney(totalOut)} hint={TXT.rose} />
                   <Field label="Net flow" value={formatMoney(net)} strong hint={net < 0 ? TXT.rose : TXT.emerald} />
                   <Field label="Stays in period" value={report.stays.length} />
                 </Box>
-              </aside>
+              </div>
             </div>
+
+            {/* ---- Money out ledger ---- */}
+            <p className={`border-b px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider ${GRID} ${BAND.rose} ${TXT.rose}`}>Money out — expenses, stock &amp; drawings</p>
+            {!report.out.length ? (
+              <div className="p-5">
+                <Empty t={t} icon={Banknote} title="Nothing went out in this period" text="Paid expenses, stock purchases and till drawings in the selected dates appear here." />
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[44rem] border-collapse text-left text-[11px]">
+                  <thead>
+                    <tr className="bg-slate-100/90 dark:bg-white/[0.06]">
+                      <th className={`${TH} w-8 text-center ${t.muted}`}>#</th>
+                      <th className={`${TH} ${t.muted}`}>Date</th>
+                      <th className={`${TH} ${t.muted}`}>Type</th>
+                      <th className={`${TH} ${t.muted}`}>Details</th>
+                      <th className={`${TH} ${t.muted}`}>Paid to</th>
+                      <th className={`${TH} ${t.muted}`}>Status</th>
+                      <th className={`${TH} text-right ${TXT.rose}`}>Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {report.out.map((r, i) => (
+                      <tr key={r.id} className={`odd:bg-slate-50/70 hover:bg-sky-500/[0.04] dark:odd:bg-white/[0.02] dark:hover:bg-white/[0.04] ${r.counted ? '' : 'opacity-60'}`}>
+                        <td className={`${TD} text-center font-semibold ${t.muted}`}>{i + 1}</td>
+                        <td className={`${TD} whitespace-nowrap ${t.muted}`}>{fmtDT(r.at)}</td>
+                        <td className={`${TD} font-semibold ${TXT[OUT_HUE[r.kind] ?? 'slate']}`}>{r.kind}</td>
+                        <td className={`${TD} font-medium`}>{r.detail}</td>
+                        <td className={TD}>{r.payee}</td>
+                        <td className={TD}><Pill tone={r.tone}>{r.status}</Pill></td>
+                        <td className={`${TD} text-right font-semibold ${TXT.rose}`}>{formatMoney(r.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-800 text-xs font-bold text-white dark:bg-slate-900">
+                      <td className={`border-r ${GRID} px-2 py-2.5`} colSpan={6}>Total money out</td>
+                      <td className={`px-2 py-2.5 text-right ${TXT.rose}`}>{formatMoney(totalOut)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
           </section>
         </>
       )}
