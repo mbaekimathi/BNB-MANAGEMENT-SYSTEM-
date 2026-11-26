@@ -77,7 +77,7 @@ const fmt = (v: string | number) => moneyFmt.format(Number(v))
 
 /** The shared from/to state every report uses. */
 export function useRange() {
-  const [fromD, setFromD] = useState(() => `${todayISO().slice(0, 7)}-01`)
+  const [fromD, setFromD] = useState(todayISO)
   const [toD, setToD] = useState(todayISO)
   const from = useMemo(() => new Date(`${fromD}T00:00:00`), [fromD])
   const to = useMemo(() => new Date(`${toD}T23:59:59.999`), [toD])
@@ -87,6 +87,21 @@ export function useRange() {
   }
   const overlaps = (start: string, end: string) => new Date(start) < to && new Date(end) > from
   return { fromD, toD, setFromD, setToD, from, to, inRange, overlaps }
+}
+
+type RangeMode = 'day' | 'period' | 'month' | 'year'
+
+const RANGE_MODES: { id: RangeMode; label: string }[] = [
+  { id: 'day', label: 'Day' },
+  { id: 'period', label: 'Period' },
+  { id: 'month', label: 'Month' },
+  { id: 'year', label: 'Year' },
+]
+
+/** Last calendar day of a YYYY-MM month, as an ISO date. */
+const monthEnd = (m: string) => {
+  const [y, mo] = m.split('-').map(Number)
+  return `${m}-${String(new Date(y, mo, 0).getDate()).padStart(2, '0')}`
 }
 
 /** Period picker + Print/PDF/CSV actions — the top panel on every report. */
@@ -103,6 +118,13 @@ export function RangePanel({ t, fromD, toD, setFromD, setToD, onCsv, ready, titl
   me?: Employee
 }) {
   const [pdfBusy, setPdfBusy] = useState(false)
+  const [mode, setMode] = useState<RangeMode>('day')
+  const [day, setDay] = useState(todayISO)
+  const [perFrom, setPerFrom] = useState(() => `${todayISO().slice(0, 7)}-01`)
+  const [perTo, setPerTo] = useState(todayISO)
+  const [month, setMonth] = useState(() => todayISO().slice(0, 7))
+  const [year, setYear] = useState(() => todayISO().slice(0, 4))
+  const years = useMemo(() => Array.from({ length: 12 }, (_, i) => Number(todayISO().slice(0, 4)) - i), [])
   const doc = { title, fromD, toD, me }
   const pdf = () => {
     setPdfBusy(true)
@@ -110,6 +132,19 @@ export function RangePanel({ t, fromD, toD, setFromD, setToD, onCsv, ready, titl
       .catch(() => window.alert('Could not generate the PDF. Please try again.'))
       .finally(() => setPdfBusy(false))
   }
+  const applyDay = (d: string) => { setDay(d); setFromD(d); setToD(d) }
+  const applyPeriod = (f: string, e: string) => { setPerFrom(f); setPerTo(e); setFromD(f); setToD(e) }
+  const applyMonth = (m: string) => { setMonth(m); setFromD(`${m}-01`); setToD(monthEnd(m)) }
+  const applyYear = (y: string) => { setYear(y); setFromD(`${y}-01-01`); setToD(`${y}-12-31`) }
+  const choose = (m: RangeMode) => {
+    setMode(m)
+    if (m === 'day') applyDay(day)
+    else if (m === 'period') applyPeriod(perFrom, perTo)
+    else if (m === 'month') applyMonth(month)
+    else applyYear(year)
+  }
+  const lbl = `text-[11px] font-medium ${t.muted}`
+  const field = `h-10 w-full bg-transparent px-3 text-sm outline-none focus:ring-2 ${t.radius} ${t.chip} ${t.ring} [color-scheme:light] dark:[color-scheme:dark]`
   return (
     <div data-report-toolbar>
     <Panel t={t} title="Report period" actions={
@@ -127,21 +162,64 @@ export function RangePanel({ t, fromD, toD, setFromD, setToD, onCsv, ready, titl
         )}
       </div>
     }>
-      <div className="grid gap-3 sm:max-w-md sm:grid-cols-2">
-        <label className="flex flex-col gap-1">
-          <span className={`text-[11px] font-medium ${t.muted}`}>From</span>
-          <input
-            type="date" value={fromD} max={toD} onChange={(e) => setFromD(e.target.value || fromD)}
-            className={`h-10 w-full bg-transparent px-3 text-sm outline-none focus:ring-2 ${t.radius} ${t.chip} ${t.ring} [color-scheme:light] dark:[color-scheme:dark]`}
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className={`text-[11px] font-medium ${t.muted}`}>To</span>
-          <input
-            type="date" value={toD} min={fromD} max={todayISO()} onChange={(e) => setToD(e.target.value || toD)}
-            className={`h-10 w-full bg-transparent px-3 text-sm outline-none focus:ring-2 ${t.radius} ${t.chip} ${t.ring} [color-scheme:light] dark:[color-scheme:dark]`}
-          />
-        </label>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap gap-1.5">
+          {RANGE_MODES.map((m) => (
+            <button
+              key={m.id} type="button" onClick={() => choose(m.id)}
+              className={`h-8 px-3 text-xs font-semibold transition ${t.radius} ${mode === m.id ? t.brandMark : `${t.chip} hover:brightness-95 dark:hover:brightness-125`}`}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+        {mode === 'day' && (
+          <label className="flex flex-col gap-1 sm:max-w-52">
+            <span className={lbl}>Date</span>
+            <input
+              type="date" value={day} max={todayISO()} onChange={(e) => applyDay(e.target.value || day)}
+              className={field}
+            />
+          </label>
+        )}
+        {mode === 'period' && (
+          <div className="grid gap-3 sm:max-w-md sm:grid-cols-2">
+            <label className="flex flex-col gap-1">
+              <span className={lbl}>From</span>
+              <input
+                type="date" value={perFrom} max={perTo} onChange={(e) => applyPeriod(e.target.value || perFrom, perTo)}
+                className={field}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className={lbl}>To</span>
+              <input
+                type="date" value={perTo} min={perFrom} max={todayISO()} onChange={(e) => applyPeriod(perFrom, e.target.value || perTo)}
+                className={field}
+              />
+            </label>
+          </div>
+        )}
+        {mode === 'month' && (
+          <label className="flex flex-col gap-1 sm:max-w-52">
+            <span className={lbl}>Month</span>
+            <input
+              type="month" value={month} max={todayISO().slice(0, 7)} onChange={(e) => applyMonth(e.target.value || month)}
+              className={field}
+            />
+          </label>
+        )}
+        {mode === 'year' && (
+          <label className="flex flex-col gap-1 sm:max-w-52">
+            <span className={lbl}>Year</span>
+            <select
+              value={year} onChange={(e) => applyYear(e.target.value)}
+              className={`${field} [&>option]:bg-white [&>option]:text-slate-900 dark:[&>option]:bg-slate-900 dark:[&>option]:text-slate-100`}
+            >
+              {years.map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </label>
+        )}
       </div>
     </Panel>
     </div>

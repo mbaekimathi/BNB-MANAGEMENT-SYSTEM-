@@ -97,6 +97,9 @@ api.interceptors.request.use((config) => {
 
 let refreshing: Promise<string | null> | null = null
 
+/** Fired on window when the session can't be recovered — AuthContext listens and logs out. */
+export const SESSION_EXPIRED = 'haven:session-expired'
+
 async function refreshAccess(): Promise<string | null> {
   const refresh = tokens.refresh
   if (!refresh) return null
@@ -114,14 +117,19 @@ api.interceptors.response.use(
   (res) => res,
   async (error: AxiosError) => {
     const original = error.config as (typeof error.config & { _retry?: boolean }) | undefined
-    if (error.response?.status === 401 && original && !original._retry && !original.url?.includes('/auth/login')) {
-      original._retry = true
-      refreshing ??= refreshAccess().finally(() => (refreshing = null))
-      const access = await refreshing
-      if (access) {
-        original.headers.Authorization = `Bearer ${access}`
-        return api(original)
+    if (error.response?.status === 401 && original && !original.url?.includes('/auth/login')) {
+      if (!original._retry) {
+        original._retry = true
+        refreshing ??= refreshAccess().finally(() => (refreshing = null))
+        const access = await refreshing
+        if (access) {
+          original.headers.Authorization = `Bearer ${access}`
+          return api(original)
+        }
       }
+      /** Refresh failed or a fresh token was still rejected — log the client out
+       *  rather than surfacing "Authentication credentials were not provided." */
+      if (!original.url?.includes('/auth/logout')) window.dispatchEvent(new Event(SESSION_EXPIRED))
     }
     return Promise.reject(error)
   },

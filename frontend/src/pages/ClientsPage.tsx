@@ -9,6 +9,8 @@ import {
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { Button, Empty, ErrorNote, Flash, Input, Loading, PageHeader, Panel, Pill, Select, Stat, Textarea, type Tone } from '../components/hr/ui'
+import { EmailInput } from '../components/hr/EmailInput'
+import { NatIdInput } from '../components/hr/NationalityInput'
 import { PhoneInput } from '../components/hr/PhoneInput'
 import { parseApiError, type Employee } from '../lib/api'
 import {
@@ -17,7 +19,7 @@ import {
   type ClientRow, type ExtraPackage, type GuestIdType, type PaymentMethod, type PayResult,
   type Room, type RoomChangeOption, type RoomChangeResult, type Voucher,
 } from '../lib/bnb'
-import { COUNTRIES, phoneComplete } from '../lib/countries'
+import { phoneComplete } from '../lib/countries'
 import { formatDate, formatMoney, thisMonth, todayISO, useApi } from '../lib/hr'
 import { useNow } from '../lib/time'
 import type { NavItem, WorkspaceTheme } from '../lib/workspaces'
@@ -1040,7 +1042,7 @@ function EditClient({ t, c, onClose, onDone }: {
   const [email, setEmail] = useState(c.email)
   const [idType, setIdType] = useState<GuestIdType | ''>(c.id_type)
   const [idNumber, setIdNumber] = useState(c.id_number)
-  const [nationality, setNationality] = useState(c.nationality)
+  const [nationality, setNationality] = useState(c.nationality || 'Kenya')
   const [notes, setNotes] = useState(c.notes)
   const [err, setErr] = useState('')
   const [fields, setFields] = useState<Record<string, string>>({})
@@ -1106,19 +1108,18 @@ function EditClient({ t, c, onClose, onDone }: {
 
         <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
           <div className="grid gap-3 sm:grid-cols-2">
-            <Input t={t} label="Full name" required value={name} onChange={(e) => setName(e.target.value)} error={fields.guest_name} autoComplete="off" />
+            <Input t={t} label="Full name" required value={name} onChange={(e) => setName(e.target.value.toUpperCase())} error={fields.guest_name} autoComplete="off" />
             <PhoneInput t={t} label="Phone" required value={phone} onChange={setPhone} error={fields.guest_phone} />
-            <Input t={t} label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} error={fields.guest_email} placeholder="Optional" autoComplete="off" />
-            <Select t={t} label="ID document" value={idType} onChange={(e) => setIdType(e.target.value as GuestIdType | '')}>
-              <option value="">No ID on file</option>
-              {GUEST_ID_TYPES.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
-            </Select>
-            <Input t={t} label="ID / passport number" value={idNumber} onChange={(e) => setIdNumber(e.target.value)} error={fields.guest_id_number} placeholder="Optional" autoComplete="off" />
-            <div>
-              <Input t={t} label="Nationality" list="client-nationalities" value={nationality} onChange={(e) => setNationality(e.target.value)} error={fields.guest_nationality} placeholder="e.g. Kenyan" autoComplete="off" />
-              <datalist id="client-nationalities">
-                {COUNTRIES.map((x) => <option key={x.iso} value={x.name} />)}
-              </datalist>
+            <EmailInput t={t} label="Email" value={email} onChange={setEmail} error={fields.guest_email} />
+            <div className="sm:col-span-2">
+              <NatIdInput
+                t={t}
+                nationality={nationality} onNationality={setNationality}
+                idType={idType} onIdType={setIdType}
+                idNumber={idNumber} onIdNumber={setIdNumber}
+                emptyTypeLabel="No ID on file"
+                error={fields.guest_nationality || fields.guest_id_number}
+              />
             </div>
             <div className="sm:col-span-2">
               <Textarea t={t} label="Notes & special requests" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional" />

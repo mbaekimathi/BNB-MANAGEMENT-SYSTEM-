@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { COUNTRIES, DEFAULT_COUNTRY, dialCountry, flagUrl, subscriberLength, type Country } from '../../lib/countries'
 import type { WorkspaceTheme } from '../../lib/workspaces'
 
-function Flag({ c }: { c: Country }) {
+export function Flag({ c }: { c: Country }) {
   return (
     <span className="relative inline-flex w-5 shrink-0 items-center justify-center overflow-hidden rounded-[2px] text-sm leading-none">
       <span aria-hidden>{c.flag}</span>

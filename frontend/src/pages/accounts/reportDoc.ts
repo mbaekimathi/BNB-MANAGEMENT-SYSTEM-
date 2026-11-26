@@ -101,7 +101,7 @@ export async function printReport(doc: ReportDocMeta) {
       </div>
       <div class="rp-meta">
         <p class="rp-title">${escHtml(doc.title)}</p>
-        <p class="rp-sub">${escHtml(formatDate(doc.fromD))} — ${escHtml(formatDate(doc.toD))}</p>
+        <p class="rp-sub">${escHtml(doc.fromD === doc.toD ? formatDate(doc.fromD) : `${formatDate(doc.fromD)} — ${formatDate(doc.toD)}`)}</p>
         <p class="rp-sub">Generated ${escHtml(generated)}${prepared ? ` · ${escHtml(prepared)}` : ''}</p>
       </div>
     </header>
@@ -187,7 +187,7 @@ export async function downloadReportPdf(doc: ReportDocMeta) {
   const c = await companyOf(doc.me)
   const generated = stamp()
   const prepared = doc.me ? `Prepared by ${doc.me.full_name} — ${doc.me.role_label}` : ''
-  const period = `${formatDate(doc.fromD)} — ${formatDate(doc.toD)}`
+  const period = doc.fromD === doc.toD ? formatDate(doc.fromD) : `${formatDate(doc.fromD)} — ${formatDate(doc.toD)}`
   const logo = c.photo ? await loadImage(c.photo) : null
   const lastY = () => (pdf as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY ?? 0
   let y = 90

@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { api, tokens, type Employee, type LoginResponse, type SignupPayload } from '../lib/api'
+import { api, SESSION_EXPIRED, tokens, type Employee, type LoginResponse, type SignupPayload } from '../lib/api'
 
 interface AuthState {
   user: Employee | null
@@ -52,6 +52,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     tokens.clear()
     setUser(null)
   }, [])
+
+  /** Session died mid-use (refresh rejected or no token left) — log the client
+   *  out instead of showing the raw 401 error; RoleRoute then sends them to /login. */
+  useEffect(() => {
+    const onExpired = () => void logout()
+    window.addEventListener(SESSION_EXPIRED, onExpired)
+    return () => window.removeEventListener(SESSION_EXPIRED, onExpired)
+  }, [logout])
 
   const reload = useCallback(async () => {
     const { data } = await api.get<Employee>('/auth/me/')

@@ -3,12 +3,14 @@ import { AlarmClock, ArrowLeft, ArrowRight, ArrowUpRight, BadgeCheck, Ban, BedDo
 import { useEffect, useMemo, useState, type FocusEvent, type FormEvent, type ReactNode, type TextareaHTMLAttributes } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Button, Empty, ErrorNote, Flash, Input, LinkButton, Loading, PageHeader, Panel, Pill, Select, Stat, type Tone } from '../components/hr/ui'
+import { EmailInput } from '../components/hr/EmailInput'
+import { NatIdInput } from '../components/hr/NationalityInput'
 import { PhoneInput } from '../components/hr/PhoneInput'
 import { PayState } from './GuestsInHousePage'
 import { clientPath } from '../lib/roles'
 import { parseApiError, type Employee, type FieldErrors } from '../lib/api'
-import { bnb, clientKey, dayRestHours, GUEST_ID_TYPES, PAYMENT_METHODS, stayLength, type Booking, type BookingStatus, type ExtraPackage, type GuestIdType, type PaymentMethod, type Room } from '../lib/bnb'
-import { COUNTRIES, localDigits, phoneComplete } from '../lib/countries'
+import { bnb, clientKey, dayRestHours, PAYMENT_METHODS, stayLength, type Booking, type BookingStatus, type ExtraPackage, type GuestIdType, type PaymentMethod, type Room } from '../lib/bnb'
+import { localDigits, phoneComplete } from '../lib/countries'
 import { formatMoney, useApi } from '../lib/hr'
 import { useNow } from '../lib/time'
 import type { NavItem, WorkspaceTheme } from '../lib/workspaces'
@@ -597,7 +599,7 @@ function DayRestRow({ t, b, i, busy, now, to, onCancel }: { t: WorkspaceTheme; b
 const blank = {
   guest_name: '', guest_phone: '', guest_email: '',
   guest_id_type: 'national_id' as GuestIdType, guest_id_number: '',
-  guest_nationality: '', guest_notes: '',
+  guest_nationality: 'Kenya', guest_notes: '',
   ref_name: '', ref_phone: '',
   guests: '1', room: '',
   start: localDT(new Date()), days: '2', hours: '3',
@@ -682,7 +684,7 @@ type Companion = {
   more: boolean
 }
 const emptyCompanion = (): Companion => ({
-  name: '', phone: '', email: '', id_type: 'national_id', id_number: '', nationality: '',
+  name: '', phone: '', email: '', id_type: 'national_id', id_number: '', nationality: 'Kenya',
   notes: '', type: '', room: '', ownDates: false, start: localDT(new Date()), days: '',
   more: false,
 })
@@ -763,10 +765,13 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
   const [depositAmt, setDepositAmt] = useState('')
   // The tax invoice / eTIMS code the bill was rung up under — optional record.
   const [taxRef, setTaxRef] = useState('')
+  const [taxOpen, setTaxOpen] = useState(false)
   const [payEdits, setPayEdits] = useState<Partial<Record<number, PayEdit>>>({})
   // Extra packages picked per room-holder — `picked[gi]` lists catalogue ids;
-  // the same party-position key payments use (0 = main guest).
+  // the same party-position key payments use (0 = main guest). `pkgOpen` holds
+  // which guest's package picker is unfolded on the bill.
   const [picked, setPicked] = useState<Record<number, number[]>>({})
+  const [pkgOpen, setPkgOpen] = useState<Record<number, boolean>>({})
 
   useEffect(() => {
     setRoomQ('')
@@ -777,6 +782,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
   }, [editing])
 
   const set = (k: keyof typeof blank) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [k]: e.target.value }))
+  const setUpper = (k: keyof typeof blank) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [k]: e.target.value.toUpperCase() }))
   const put = (k: keyof typeof blank, v: string) => setForm((f) => ({ ...f, [k]: v }))
   /** Drop one field's error — used the moment the user fixes the field (e.g. picks a room). */
   const clearErr = (k: string) =>
@@ -821,7 +827,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
 
   const pickGuest = (g: GuestRef) => {
     setForm((f) => ({
-      ...f, guest_name: g.name, guest_phone: g.phone,
+      ...f, guest_name: g.name.toUpperCase(), guest_phone: g.phone,
       guest_email: g.email || f.guest_email,
       guest_id_type: (g.id_type || f.guest_id_type) as GuestIdType,
       guest_id_number: g.id_number || f.guest_id_number,
@@ -832,7 +838,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
   }
   const pickCompanion = (i: number, g: GuestRef) => {
     setCompanions((cs) => cs.map((c, j) => j === i ? {
-      ...c, name: g.name, phone: g.phone,
+      ...c, name: g.name.toUpperCase(), phone: g.phone,
       email: g.email || c.email,
       id_type: (g.id_type || c.id_type) as GuestIdType,
       id_number: g.id_number || c.id_number,
@@ -842,7 +848,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
     setSuggest(null)
   }
   const pickReferrer = (g: GuestRef) => {
-    setForm((f) => ({ ...f, ref_name: g.name, ref_phone: g.phone }))
+    setForm((f) => ({ ...f, ref_name: g.name.toUpperCase(), ref_phone: g.phone }))
     setSuggest(null)
   }
 
@@ -853,7 +859,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
   useEffect(() => {
     if (!phoneDone) return
     const m = clients.filter((c) => tail9(c.phone) === tail9(form.guest_phone))
-    if (m.length === 1 && form.guest_name !== m[0].name) pickGuest(m[0])
+    if (m.length === 1 && form.guest_name !== m[0].name.toUpperCase()) pickGuest(m[0])
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the phone value; pickGuest is stable
   }, [form.guest_phone, clients])
 
@@ -861,7 +867,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
     companions.forEach((c, i) => {
       if (!phoneComplete(c.phone)) return
       const m = clients.filter((x) => tail9(x.phone) === tail9(c.phone))
-      if (m.length === 1 && c.name !== m[0].name) pickCompanion(i, m[0])
+      if (m.length === 1 && c.name !== m[0].name.toUpperCase()) pickCompanion(i, m[0])
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps -- settles after one pass thanks to the guard
   }, [companions, clients])
@@ -978,10 +984,15 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
   }
   const payOk = payers.every((p) => payRowOk(p.gi, dueFor(p)))
 
-  // Extra guest details stay open once anything is filled or rejected.
-  const extras = !!(form.guest_email || form.guest_id_number || form.guest_nationality || form.guest_notes)
+  // Extra guest details stay open once anything is filled or rejected — the
+  // Kenya default alone doesn't count as filled.
+  const extras = !!(form.guest_email || form.guest_id_number || form.guest_notes || (form.guest_nationality && form.guest_nationality !== 'Kenya'))
   const extraErrors = !!(errors.guest_email || errors.guest_id_number || errors.guest_nationality || errors.guest_notes)
   const showMore = more || extras || extraErrors
+
+  // The tax panel unfolds on demand — or springs open on its own once it
+  // holds a code or carries an error, like the guest-extras section.
+  const showTax = taxOpen || !!taxRef.trim() || !!errors.tax_reference
 
   const missing = [
     !form.guest_name.trim() && 'name',
@@ -1229,13 +1240,13 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
     )
   }
 
-  /** The room & dates strip for one guest on the allocation card — opens the allocate popup. */
+  /** The room strip for one guest on the allocation card — opens the allocate popup. */
   const stayRow = (k: number) => {
     const main = k < 0
     const c = main ? undefined : companions[k]
     const room = main ? chosen : rooms.find((r) => r.id === Number(c?.room))
     const { s, e, d } = main ? { s: start, e: end, d: span } : cDates(c!)
-    const err = main ? errors.start || errors.end || errors.days || errors.hours || errors.room : errors[`c${k}room`]
+    const err = main ? errors.room : errors[`c${k}room`]
     return (
       <>
         <button
@@ -1255,7 +1266,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
           </span>
           <span className="min-w-0 flex-1">
             <span className={`block truncate text-xs ${room ? 'font-semibold' : 'font-semibold text-amber-600 dark:text-amber-400'}`}>
-              {room ? `${room.name} · ${room.type_label}` : main ? 'Pick their room & dates' : 'Pick their room'}
+              {room ? `${room.name} · ${room.type_label}` : 'Pick their room'}
             </span>
             <span className={`block truncate text-[10px] ${t.muted}`}>
               {spanText(s, e, d)}
@@ -1309,7 +1320,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
               </span>
               <div className="min-w-0">
                 <h3 className={`truncate text-base ${t.heading}`}>{title}</h3>
-                <p className={`text-xs ${t.muted}`}>{main ? 'The booking dates and the main room.' : 'Their room and when they stay.'}</p>
+                <p className={`text-xs ${t.muted}`}>{main ? 'Pick their room for the stay.' : 'Their room and when they stay.'}</p>
               </div>
             </div>
             <button type="button" onClick={() => setEditing(null)} aria-label="Close" className={`grid size-9 shrink-0 place-items-center ${t.radius} ${t.iconButton}`}>
@@ -1319,35 +1330,14 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
 
           <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
             {main ? (
-              <>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Input
-                    t={t} label={mode === 'reserve' ? 'Moving in — date & time' : 'Check-in — date & time'}
-                    type="datetime-local" value={form.start} onChange={(e) => { set('start')(e); clearErr('start') }} error={errors.start} required
-                  />
-                  {dayRest ? (
-                    <Stepper t={t} label="Hours to occupy" value={hours} min={1} max={12} onChange={(v) => { put('hours', String(v)); clearErr('hours') }} error={errors.hours} suffix={hours === 1 ? 'hour' : 'hours'} />
-                  ) : (
-                    <Stepper t={t} label="Length of stay" value={days} min={1} max={365} onChange={(v) => { put('days', String(v)); clearErr('days') }} error={errors.days} suffix={days === 1 ? 'day' : 'days'} />
-                  )}
-                </div>
-                <div className={`flex items-center gap-2 px-3 py-2 text-xs ${t.radius} ${t.chip}`}>
-                  <Clock className={`size-3.5 shrink-0 ${t.muted}`} />
-                  {end ? (
-                    <span>{mode === 'reserve' ? 'Reserved until' : dayRest ? 'Room frees at' : 'Checks out'} <b>{end.toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</b> · {span} {span === 1 ? (dayRest ? 'hour' : 'day') : (dayRest ? 'hours' : 'days')}</span>
-                  ) : (
-                    <span className={t.muted}>Pick the {mode === 'reserve' ? 'move-in' : 'check-in'} date to see the end time.</span>
-                  )}
-                </div>
-                <section>
-                  <legend className={`mb-2 text-xs font-semibold uppercase tracking-wider ${t.muted}`}>Room</legend>
-                  {roomGrid(roomType, setRoomType, form.room, usableMain, (id) => { put('room', id); clearErr('room') }, blockers, (r) => {
-                    const j = companions.findIndex((c) => Number(c.room) === r.id)
-                    return j >= 0 ? `Guest ${j + 2}'s pick` : ''
-                  })}
-                  {errors.room && <span className="mt-1 block text-[11px] text-rose-500">{errors.room}</span>}
-                </section>
-              </>
+              <section>
+                <legend className={`mb-2 text-xs font-semibold uppercase tracking-wider ${t.muted}`}>Room</legend>
+                {roomGrid(roomType, setRoomType, form.room, usableMain, (id) => { put('room', id); clearErr('room') }, blockers, (r) => {
+                  const j = companions.findIndex((c) => Number(c.room) === r.id)
+                  return j >= 0 ? `Guest ${j + 2}'s pick` : ''
+                })}
+                {errors.room && <span className="mt-1 block text-[11px] text-rose-500">{errors.room}</span>}
+              </section>
             ) : (
               <>
                 <div className="flex min-w-0 flex-col gap-1">
@@ -1362,11 +1352,11 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
                         }}
                         className={`flex h-8 items-center justify-center gap-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${t.radius} ${c!.ownDates === v ? t.navActive : 'opacity-70 hover:opacity-100'}`}
                       >
-                        {v ? 'Own dates' : 'Same as booking'}
+                        {v ? 'Own dates' : "Same as guest 1"}
                       </button>
                     ))}
                   </div>
-                  {!c!.room && <span className={`text-[11px] ${t.muted}`}>Allocate them a room below — each guest needs a different room. They follow the booking dates unless you set their own.</span>}
+                  {!c!.room && <span className={`text-[11px] ${t.muted}`}>Allocate them a room below — each guest needs a different room. They follow guest 1's dates unless you set their own.</span>}
                 </div>
                 {c!.ownDates && c!.room && cStay && (
                   <>
@@ -1430,7 +1420,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
               {suggest === 'p' && <SuggestList t={t} items={phoneSug(form.guest_phone)} onPick={pickGuest} />}
             </div>
             <div className="relative" onFocus={() => setSuggest('n')} onBlur={blurSuggest}>
-              <Input t={t} label="Full name" value={form.guest_name} onChange={set('guest_name')} error={errors.guest_name} placeholder="e.g. Jane Mwangi" autoComplete="off" required />
+              <Input t={t} label="Full name" value={form.guest_name} onChange={setUpper('guest_name')} error={errors.guest_name} placeholder="e.g. JANE MWANGI" autoComplete="off" required />
               {suggest === 'n' && <SuggestList t={t} items={nameSug(form.guest_name)} onPick={pickGuest} />}
             </div>
             {phoneDone && (
@@ -1467,7 +1457,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
                         {suggest === 'rp' && <SuggestList t={t} items={phoneSug(form.ref_phone)} onPick={pickReferrer} />}
                       </div>
                       <div className="relative" onFocus={() => setSuggest('rn')} onBlur={blurSuggest}>
-                        <Input t={t} label="Referrer's name" value={form.ref_name} onChange={set('ref_name')} error={errors.referrer_name} placeholder="e.g. Jane Mwangi" autoComplete="off" />
+                        <Input t={t} label="Referrer's name" value={form.ref_name} onChange={setUpper('ref_name')} error={errors.referrer_name} placeholder="e.g. JANE MWANGI" autoComplete="off" />
                         {suggest === 'rn' && <SuggestList t={t} items={nameSug(form.ref_name)} onPick={pickReferrer} />}
                       </div>
                     </div>
@@ -1490,17 +1480,16 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
                     className="overflow-hidden"
                   >
                     <div className={`mt-4 grid gap-4 border-t pt-4 sm:grid-cols-2 ${t.sidebarDivider}`}>
-                      <Input t={t} label="Email address" type="email" value={form.guest_email} onChange={set('guest_email')} error={errors.guest_email} placeholder="guest@example.com" autoComplete="off" />
-                      <div>
-                        <Input t={t} label="Nationality" list="guest-nationalities" value={form.guest_nationality} onChange={set('guest_nationality')} error={errors.guest_nationality} placeholder="e.g. Kenyan" autoComplete="off" />
-                        <datalist id="guest-nationalities">
-                          {COUNTRIES.map((c) => <option key={c.iso} value={c.name} />)}
-                        </datalist>
+                      <EmailInput t={t} label="Email address" value={form.guest_email} onChange={(v) => { put('guest_email', v); clearErr('guest_email') }} error={errors.guest_email} />
+                      <div className="sm:col-span-2">
+                        <NatIdInput
+                          t={t}
+                          nationality={form.guest_nationality} onNationality={(v) => { put('guest_nationality', v); clearErr('guest_nationality') }}
+                          idType={form.guest_id_type} onIdType={(v) => put('guest_id_type', v)}
+                          idNumber={form.guest_id_number} onIdNumber={(v) => { put('guest_id_number', v); clearErr('guest_id_number') }}
+                          error={errors.guest_nationality || errors.guest_id_number}
+                        />
                       </div>
-                      <Select t={t} label="ID document" value={form.guest_id_type} onChange={(e) => put('guest_id_type', e.target.value)}>
-                        {GUEST_ID_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </Select>
-                      <Input t={t} label="ID / passport number" value={form.guest_id_number} onChange={set('guest_id_number')} error={errors.guest_id_number} placeholder="Document number" autoComplete="off" />
                       <div className="sm:col-span-2">
                         <Area t={t} label="Notes & special requests" value={form.guest_notes} onChange={set('guest_notes')} error={errors.guest_notes} placeholder="Allergies, late arrival, extra bed…" maxLength={500} />
                       </div>
@@ -1518,7 +1507,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
   const companionCard = (i: number): ReactNode => {
     const c = companions[i]
     if (!c) return null
-    const cMore = c.more || !!(c.email || c.nationality || c.id_number || c.notes)
+    const cMore = c.more || !!(c.email || c.id_number || c.notes || (c.nationality && c.nationality !== 'Kenya'))
     const cMatch = phoneComplete(c.phone) ? clients.find((x) => tail9(x.phone) === tail9(c.phone)) : undefined
     return (
       <div className={`overflow-hidden ${t.radius} ${t.chip}`}>
@@ -1528,7 +1517,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
             {suggest === `cp${i}` && <SuggestList t={t} items={phoneSug(c.phone)} onPick={(g) => pickCompanion(i, g)} />}
           </div>
           <div className="relative" onFocus={() => setSuggest(`cn${i}`)} onBlur={blurSuggest}>
-            <Input t={t} label="Full name" value={c.name} onChange={(e) => setC(i, 'name', e.target.value)} error={errors[`c${i}name`]} placeholder="e.g. John Mwangi" autoComplete="off" required />
+            <Input t={t} label="Full name" value={c.name} onChange={(e) => setC(i, 'name', e.target.value.toUpperCase())} error={errors[`c${i}name`]} placeholder="e.g. JOHN MWANGI" autoComplete="off" required />
             {suggest === `cn${i}` && <SuggestList t={t} items={nameSug(c.name)} onPick={(g) => pickCompanion(i, g)} />}
           </div>
           {phoneComplete(c.phone) && (
@@ -1546,12 +1535,16 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
                   className="overflow-hidden"
                 >
                   <div className={`mt-4 grid gap-4 border-t pt-4 sm:grid-cols-2 ${t.sidebarDivider}`}>
-                    <Input t={t} label="Email address" type="email" value={c.email} onChange={(e) => setC(i, 'email', e.target.value)} error={errors[`c${i}email`]} placeholder="guest@example.com" autoComplete="off" />
-                    <Input t={t} label="Nationality" list="guest-nationalities" value={c.nationality} onChange={(e) => setC(i, 'nationality', e.target.value)} placeholder="e.g. Kenyan" autoComplete="off" />
-                    <Select t={t} label="ID document" value={c.id_type} onChange={(e) => setC(i, 'id_type', e.target.value as GuestIdType)}>
-                      {GUEST_ID_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </Select>
-                    <Input t={t} label="ID / passport number" value={c.id_number} onChange={(e) => setC(i, 'id_number', e.target.value)} placeholder="Document number" autoComplete="off" />
+                    <EmailInput t={t} label="Email address" value={c.email} onChange={(v) => { setC(i, 'email', v); clearErr(`c${i}email`) }} error={errors[`c${i}email`]} />
+                    <div className="sm:col-span-2">
+                      <NatIdInput
+                        t={t}
+                        nationality={c.nationality} onNationality={(v) => { setC(i, 'nationality', v); clearErr(`c${i}nationality`) }}
+                        idType={c.id_type} onIdType={(v) => setC(i, 'id_type', v || 'national_id')}
+                        idNumber={c.id_number} onIdNumber={(v) => setC(i, 'id_number', v)}
+                        error={errors[`c${i}nationality`]}
+                      />
+                    </div>
                     <div className="sm:col-span-2">
                       <Area t={t} label="Notes & special requests" value={c.notes} onChange={(e) => setC(i, 'notes', e.target.value)} placeholder="Allergies, late arrival, extra bed…" maxLength={500} />
                     </div>
@@ -1565,14 +1558,35 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
     )
   }
 
-  /** Card 2 — allocate every guest a room. Each row opens the same per-guest
-   *  room & dates popup; every guest needs a different room. */
+  /** Card 2 — the booking's check-in and length up top, then one room-allocation
+   *  row per guest. Extra guests follow guest 1's dates by default; their popup
+   *  can still give them their own. Every guest needs a different room. */
   const roomsCard = (
     <div className="space-y-4">
       <p className={`text-xs ${t.muted}`}>
         Allocate each guest a different room — every room-holder becomes their own client, with their own bill
-        and payments. Two guests can't share the same room.
+        and payments. Two guests can't share the same room. Every guest follows these dates unless you give them their own.
       </p>
+      <div className={`grid gap-4 p-3 sm:grid-cols-2 ${t.radius} ${t.chip}`}>
+        <Input
+          t={t} label={mode === 'reserve' ? 'Moving in — date & time' : 'Check-in — date & time'}
+          type="datetime-local" value={form.start} onChange={(e) => { set('start')(e); clearErr('start') }} error={errors.start} required
+        />
+        {dayRest ? (
+          <Stepper t={t} label="Hours to occupy" value={hours} min={1} max={12} onChange={(v) => { put('hours', String(v)); clearErr('hours') }} error={errors.hours} suffix={hours === 1 ? 'hour' : 'hours'} />
+        ) : (
+          <Stepper t={t} label="Length of stay" value={days} min={1} max={365} onChange={(v) => { put('days', String(v)); clearErr('days') }} error={errors.days} suffix={days === 1 ? 'day' : 'days'} />
+        )}
+        <div className={`flex items-center gap-2 px-3 py-2 text-xs sm:col-span-2 ${t.radius} ${t.chip}`}>
+          <Clock className={`size-3.5 shrink-0 ${t.muted}`} />
+          {end ? (
+            <span>{mode === 'reserve' ? 'Reserved until' : dayRest ? 'Room frees at' : 'Checks out'} <b>{end.toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</b> · {span} {span === 1 ? (dayRest ? 'hour' : 'day') : (dayRest ? 'hours' : 'days')}</span>
+          ) : (
+            <span className={t.muted}>Pick the {mode === 'reserve' ? 'move-in' : 'check-in'} date to see the end time.</span>
+          )}
+        </div>
+        {errors.end && <p className="text-[11px] text-rose-500 sm:col-span-2">{errors.end}</p>}
+      </div>
       {[{ k: -1, n: 1, name: form.guest_name.trim() }, ...companions.map((c, j) => ({ k: j, n: j + 2, name: c.name.trim() }))].map((g) => (
         <div key={g.k}>
           <p className="mb-1.5 flex items-center gap-2 text-xs font-semibold">
@@ -1633,17 +1647,36 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
                 </button>
               </div>
             ))}
-            {packages.length > 0 && (
+            {packages.some((x) => !(picked[p.gi] ?? []).includes(x.id)) && (
               <div className={`border-t px-3 py-2.5 ${t.sidebarDivider}`}>
-                <Select
-                  t={t} label={`Extra packages for Guest ${p.gi + 1} (optional)`} value=""
-                  onChange={(e) => { const id = Number(e.target.value); if (id) togglePkg(p.gi, id) }}
-                >
-                  <option value="">Pick a package to add</option>
-                  {packages.filter((x) => !(picked[p.gi] ?? []).includes(x.id)).map((x) => (
-                    <option key={x.id} value={x.id}>{x.name} · {x.category_label} — {formatMoney(x.amount)}</option>
-                  ))}
-                </Select>
+                {addTile(
+                  pkgOpen[p.gi] ? 'Hide package picker' : 'Add a package',
+                  `Optional extras on Guest ${p.gi + 1}'s bill`,
+                  Package,
+                  () => setPkgOpen((m) => ({ ...m, [p.gi]: !m[p.gi] })),
+                  { open: !!pkgOpen[p.gi] },
+                )}
+                <AnimatePresence initial={false}>
+                  {pkgOpen[p.gi] && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="pt-3">
+                        <Select
+                          t={t} label={`Extra packages for Guest ${p.gi + 1}`} value=""
+                          onChange={(e) => { const id = Number(e.target.value); if (id) togglePkg(p.gi, id) }}
+                        >
+                          <option value="">Pick a package to add</option>
+                          {packages.filter((x) => !(picked[p.gi] ?? []).includes(x.id)).map((x) => (
+                            <option key={x.id} value={x.id}>{x.name} · {x.category_label} — {formatMoney(x.amount)}</option>
+                          ))}
+                        </Select>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             )}
           </div>
@@ -1653,19 +1686,30 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
         </p>
       </div>
       <section>
-        <legend className={`mb-2 text-xs font-semibold uppercase tracking-wider ${t.muted}`}>
-          <Receipt className="mr-1 inline size-3.5" /> Tax (optional)
-        </legend>
-        <div className={`grid gap-4 p-3 sm:grid-cols-2 ${t.radius} ${t.chip}`}>
-          <Input
-            t={t} label="Tax reference" maxLength={64} autoComplete="off"
-            value={taxRef} onChange={(e) => { setTaxRef(e.target.value.toUpperCase()); clearErr('tax_reference') }}
-            error={errors.tax_reference} placeholder="Invoice / KRA eTIMS code"
-          />
-          <p className={`self-end pb-2 text-[11px] ${t.muted}`}>
-            The invoice or eTIMS code this bill was taxed under — saved on the booking for the records.
-          </p>
-        </div>
+        {addTile(
+          showTax ? 'Hide tax reference' : 'Add a tax reference',
+          'Invoice / KRA eTIMS code — saved on the booking for the records',
+          Receipt,
+          () => setTaxOpen((o) => !o),
+          { open: showTax },
+        )}
+        <AnimatePresence initial={false}>
+          {showTax && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }}
+              className="overflow-hidden"
+            >
+              <div className={`mt-3 p-3 ${t.radius} ${t.chip}`}>
+                <Input
+                  t={t} label="Tax reference" maxLength={64} autoComplete="off"
+                  value={taxRef} onChange={(e) => { setTaxRef(e.target.value.toUpperCase()); clearErr('tax_reference') }}
+                  error={errors.tax_reference} placeholder="Invoice / KRA eTIMS code"
+                />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </section>
       {mode === 'reserve' ? (
         <section>
