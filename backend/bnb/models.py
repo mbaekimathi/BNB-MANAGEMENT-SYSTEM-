@@ -237,7 +237,7 @@ class Booking(models.Model):
     branch = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name="bookings")
     room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name="bookings")
     guest_name = models.CharField(max_length=120)
-    guest_phone = models.CharField(max_length=20)
+    guest_phone = models.CharField(max_length=20, blank=True)
     guest_email = models.EmailField(blank=True)
     guest_id_type = models.CharField("ID document type", max_length=20, choices=IdType.choices, blank=True)
     guest_id_number = models.CharField("ID / passport number", max_length=40, blank=True)
@@ -249,6 +249,7 @@ class Booking(models.Model):
     start = models.DateTimeField("move-in / check-in")
     end = models.DateTimeField("check-out")
     deposit = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    tax_reference = models.CharField("tax invoice / reference code", max_length=64, blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="bookings_taken",

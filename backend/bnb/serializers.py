@@ -771,7 +771,7 @@ class BookingSerializer(serializers.ModelSerializer):
             "guest_id_type", "guest_id_type_label", "guest_id_number",
             "guest_nationality", "guests", "guest_notes", "companions", "payments", "packages",
             "kind", "kind_label", "status", "status_label",
-            "start", "end", "nights", "deposit", "bill", "paid", "balance",
+            "start", "end", "nights", "deposit", "tax_reference", "bill", "paid", "balance",
             "referrer_name", "referrer_phone", "referral", "vouchers",
             "created_by_name", "created_at",
         ]
@@ -823,7 +823,7 @@ class BookingSerializer(serializers.ModelSerializer):
 
     def validate_guest_phone(self, value):
         value = _normalize_phone(value)
-        if not _valid_phone(value):
+        if value and not _valid_phone(value):
             raise serializers.ValidationError("Enter a valid phone number.")
         return value
 
@@ -848,6 +848,9 @@ class BookingSerializer(serializers.ModelSerializer):
         if value is not None and value < 0:
             raise serializers.ValidationError("The deposit can't be negative.")
         return value
+
+    def validate_tax_reference(self, value):
+        return value.strip()
 
     def validate(self, attrs):
         user_branch = self.context.get("user_branch")
@@ -962,7 +965,7 @@ class BookingSerializer(serializers.ModelSerializer):
             if not _valid_phone(ref_phone):
                 raise serializers.ValidationError({"referrer_phone": "Enter a valid phone number."})
             guest_phone = attrs.get("guest_phone", getattr(self.instance, "guest_phone", ""))
-            if _phone_tail(ref_phone) == _phone_tail(guest_phone):
+            if guest_phone and _phone_tail(ref_phone) == _phone_tail(guest_phone):
                 raise serializers.ValidationError({"referrer_phone": "The referrer can't be the guest themself."})
             attrs["referrer_name"] = ref_name
             attrs["referrer_phone"] = ref_phone

@@ -280,7 +280,7 @@ function RoomAccount({ t, r, open, bookings, onToggle }: { t: WorkspaceTheme; r:
                         <tr key={b.id} className="border-t border-slate-900/5 dark:border-white/5">
                           <td className="py-2 pr-3">
                             <span className="block font-medium">{b.guest_name}</span>
-                            <span className={t.muted}>{b.guest_phone}</span>
+                            <span className={t.muted}>{b.guest_phone || '—'}</span>
                           </td>
                           <td className={`py-2 pr-3 ${t.muted}`}>{fmtD(b.start)} → {fmtD(b.end)}</td>
                           <td className="py-2 pr-3 text-right font-medium">{stayLength(b)}</td>
@@ -327,7 +327,7 @@ function Deposits({ t, bookings }: { t: WorkspaceTheme; bookings: Booking[] }) {
                 <tr key={b.id} className="border-t border-slate-900/5 dark:border-white/5">
                   <td className="px-3 py-2.5">
                     <span className="block text-sm font-medium">{b.guest_name}</span>
-                    <span className={t.muted}>{b.guest_phone}</span>
+                    <span className={t.muted}>{b.guest_phone || '—'}</span>
                   </td>
                   <td className="px-3 py-2.5">{b.room_name}</td>
                   <td className={`px-3 py-2.5 ${t.muted}`}>{fmtD(b.start)} → {fmtD(b.end)}</td>
@@ -428,7 +428,7 @@ function Refunds({ t, cancelled, live }: { t: WorkspaceTheme; cancelled: Booking
                 <tr key={`${b.id}-${reason}`} className="border-t border-slate-900/5 dark:border-white/5">
                   <td className="px-3 py-2.5">
                     <span className="block text-sm font-medium">{b.guest_name}</span>
-                    <span className={t.muted}>{b.guest_phone}</span>
+                    <span className={t.muted}>{b.guest_phone || '—'}</span>
                   </td>
                   <td className="px-3 py-2.5">{b.room_name}</td>
                   <td className={`px-3 py-2.5 ${t.muted}`}>{reason}</td>

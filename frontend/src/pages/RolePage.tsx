@@ -41,9 +41,9 @@ const REGISTER_MODES: Record<string, RegisterMode> = { '': 'reserve', 'check-in'
 
 /** Where the register form returns to after a booking, per mode. */
 const REGISTER_DONE: Record<RegisterMode, [dest: string, label: string]> = {
-  reserve: ['guests-in-house/reservations', 'Back to reservations'],
-  stay: ['guests-in-house/in-house', 'Back to guests in house'],
-  dayrest: ['guests-in-house/day-rest', 'Back to day rests'],
+  reserve: ['guests-in-house', 'Back to guests in house'],
+  stay: ['guests-in-house', 'Back to guests in house'],
+  dayrest: ['guests-in-house', 'Back to guests in house'],
 }
 
 /** Old report URLs under /accounts → the new Reports section. */
@@ -509,8 +509,7 @@ function DeparturesToday({ t, me, basePath }: { t: WorkspaceTheme; me: Employee;
                         <p className="truncate text-sm font-semibold group-hover:underline">{b.guest_name}</p>
                         <p className={`truncate text-xs ${t.muted}`}>
                           <BedDouble className="mr-1 inline size-3" />{b.room_name}
-                          <span className="mx-1.5">·</span>
-                          <Phone className="mr-1 inline size-3" />{b.guest_phone}
+                          {b.guest_phone && <><span className="mx-1.5">·</span><Phone className="mr-1 inline size-3" />{b.guest_phone}</>}
                         </p>
                       </div>
                     </Link>

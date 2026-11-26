@@ -467,7 +467,7 @@ function HistoryRow({ t, b, i, to }: { t: WorkspaceTheme; b: Booking; i: number;
           <Avatar t={t} name={b.guest_name} />
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold group-hover:underline">{b.guest_name}</p>
-            <p className={`truncate text-xs ${t.muted}`}><Phone className="mr-1 inline size-3" />{b.guest_phone}</p>
+            {b.guest_phone && <p className={`truncate text-xs ${t.muted}`}><Phone className="mr-1 inline size-3" />{b.guest_phone}</p>}
           </div>
         </Link>
       </td>
@@ -506,8 +506,8 @@ function ReserveRow({ t, b, i, busy, now, to, onCheckin, onCancel }: { t: Worksp
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold group-hover:underline">{b.guest_name}</p>
             <p className={`truncate text-xs ${t.muted}`}>
-              <Phone className="mr-1 inline size-3" />{b.guest_phone}
-              {b.deposit ? <span className="mx-1.5">·</span> : ''}
+              {b.guest_phone && <><Phone className="mr-1 inline size-3" />{b.guest_phone}</>}
+              {b.guest_phone && b.deposit ? <span className="mx-1.5">·</span> : ''}
               {b.deposit ? <><Wallet className="mr-1 inline size-3" />deposit {formatMoney(b.deposit)}</> : ''}
             </p>
           </div>
@@ -558,8 +558,8 @@ function DayRestRow({ t, b, i, busy, now, to, onCancel }: { t: WorkspaceTheme; b
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold group-hover:underline">{b.guest_name}</p>
             <p className={`truncate text-xs ${t.muted}`}>
-              <Phone className="mr-1 inline size-3" />{b.guest_phone}
-              {b.deposit ? <span className="mx-1.5">·</span> : ''}
+              {b.guest_phone && <><Phone className="mr-1 inline size-3" />{b.guest_phone}</>}
+              {b.guest_phone && b.deposit ? <span className="mx-1.5">·</span> : ''}
               {b.deposit ? <><Wallet className="mr-1 inline size-3" />deposit {formatMoney(b.deposit)}</> : ''}
             </p>
           </div>
@@ -761,6 +761,8 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
   // day rests collect the full bill, one payment row per room-holder. `payEdits`
   // holds only what the receptionist touched — the rest default to the charge.
   const [depositAmt, setDepositAmt] = useState('')
+  // The tax invoice / eTIMS code the bill was rung up under — optional record.
+  const [taxRef, setTaxRef] = useState('')
   const [payEdits, setPayEdits] = useState<Partial<Record<number, PayEdit>>>({})
   // Extra packages picked per room-holder — `picked[gi]` lists catalogue ids;
   // the same party-position key payments use (0 = main guest).
@@ -983,7 +985,6 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
 
   const missing = [
     !form.guest_name.trim() && 'name',
-    !form.guest_phone.trim() && 'phone',
     !chosen && 'room',
     companions.some((c) => !c.name.trim()) && 'each guest\'s name',
     companions.some((c) => !c.room) && 'each guest\'s room',
@@ -1012,7 +1013,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
       await bnb.registerBooking({
         room: Number(form.room),
         guest_name: form.guest_name,
-        guest_phone: form.guest_phone,
+        guest_phone: form.guest_phone.trim(),
         guest_email: form.guest_email.trim(),
         guest_id_type: form.guest_id_number.trim() ? form.guest_id_type : '',
         guest_id_number: form.guest_id_number.trim(),
@@ -1043,6 +1044,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
         kind: mode === 'reserve' ? 'reservation' : dayRest ? 'day_rest' : 'stay',
         start: start.toISOString(),
         end: end.toISOString(),
+        tax_reference: taxRef.trim(),
         // Reservations hold a deposit; check-ins and day rests send the collected
         // payments — one per room-holder so each guest's own bill is settled.
         ...(mode === 'reserve'
@@ -1326,13 +1328,13 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
                   {dayRest ? (
                     <Stepper t={t} label="Hours to occupy" value={hours} min={1} max={12} onChange={(v) => { put('hours', String(v)); clearErr('hours') }} error={errors.hours} suffix={hours === 1 ? 'hour' : 'hours'} />
                   ) : (
-                    <Stepper t={t} label="Length of stay" value={days} min={1} max={365} onChange={(v) => { put('days', String(v)); clearErr('days') }} error={errors.days} suffix={days === 1 ? 'night' : 'nights'} />
+                    <Stepper t={t} label="Length of stay" value={days} min={1} max={365} onChange={(v) => { put('days', String(v)); clearErr('days') }} error={errors.days} suffix={days === 1 ? 'day' : 'days'} />
                   )}
                 </div>
                 <div className={`flex items-center gap-2 px-3 py-2 text-xs ${t.radius} ${t.chip}`}>
                   <Clock className={`size-3.5 shrink-0 ${t.muted}`} />
                   {end ? (
-                    <span>{mode === 'reserve' ? 'Reserved until' : dayRest ? 'Room frees at' : 'Checks out'} <b>{end.toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</b> · {span} {span === 1 ? (dayRest ? 'hour' : 'night') : (dayRest ? 'hours' : 'nights')}</span>
+                    <span>{mode === 'reserve' ? 'Reserved until' : dayRest ? 'Room frees at' : 'Checks out'} <b>{end.toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</b> · {span} {span === 1 ? (dayRest ? 'hour' : 'day') : (dayRest ? 'hours' : 'days')}</span>
                   ) : (
                     <span className={t.muted}>Pick the {mode === 'reserve' ? 'move-in' : 'check-in'} date to see the end time.</span>
                   )}
@@ -1374,7 +1376,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
                         t={t} label={dayRest ? 'Hours to occupy' : 'Length of stay'}
                         value={Math.max(1, parseInt(c!.days, 10) || span)} min={1} max={dayRest ? 12 : 365}
                         onChange={(v) => setC(editing, 'days', String(v))}
-                        suffix={Math.max(1, parseInt(c!.days, 10) || span) === 1 ? (dayRest ? 'hour' : 'night') : (dayRest ? 'hours' : 'nights')}
+                        suffix={Math.max(1, parseInt(c!.days, 10) || span) === 1 ? (dayRest ? 'hour' : 'day') : (dayRest ? 'hours' : 'days')}
                       />
                     </div>
                     {cStay.e && (
@@ -1424,7 +1426,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
       <div className={`overflow-hidden ${t.radius} ${t.chip}`}>
         <div className="grid gap-4 p-3 sm:grid-cols-2">
             <div className="relative" onFocus={() => setSuggest('p')} onBlur={blurSuggest}>
-              <PhoneInput t={t} label="Phone number" value={form.guest_phone} onChange={(v) => put('guest_phone', v)} error={errors.guest_phone} required />
+              <PhoneInput t={t} label="Phone number (optional)" value={form.guest_phone} onChange={(v) => { put('guest_phone', v); clearErr('guest_phone') }} error={errors.guest_phone} />
               {suggest === 'p' && <SuggestList t={t} items={phoneSug(form.guest_phone)} onPick={pickGuest} />}
             </div>
             <div className="relative" onFocus={() => setSuggest('n')} onBlur={blurSuggest}>
@@ -1461,7 +1463,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
                     </p>
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div className="relative" onFocus={() => setSuggest('rp')} onBlur={blurSuggest}>
-                        <PhoneInput t={t} label="Referrer's phone" value={form.ref_phone} onChange={(v) => put('ref_phone', v)} error={errors.referrer_phone} />
+                        <PhoneInput t={t} label="Referrer's phone" value={form.ref_phone} onChange={(v) => { put('ref_phone', v); clearErr('referrer_phone') }} error={errors.referrer_phone} />
                         {suggest === 'rp' && <SuggestList t={t} items={phoneSug(form.ref_phone)} onPick={pickReferrer} />}
                       </div>
                       <div className="relative" onFocus={() => setSuggest('rn')} onBlur={blurSuggest}>
@@ -1522,7 +1524,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
       <div className={`overflow-hidden ${t.radius} ${t.chip}`}>
         <div className="grid gap-4 p-3 sm:grid-cols-2">
           <div className="relative" onFocus={() => setSuggest(`cp${i}`)} onBlur={blurSuggest}>
-            <PhoneInput t={t} label="Phone number (optional)" value={c.phone} onChange={(v) => setC(i, 'phone', v)} error={errors[`c${i}phone`]} />
+            <PhoneInput t={t} label="Phone number (optional)" value={c.phone} onChange={(v) => { setC(i, 'phone', v); clearErr(`c${i}phone`) }} error={errors[`c${i}phone`]} />
             {suggest === `cp${i}` && <SuggestList t={t} items={phoneSug(c.phone)} onPick={(g) => pickCompanion(i, g)} />}
           </div>
           <div className="relative" onFocus={() => setSuggest(`cn${i}`)} onBlur={blurSuggest}>
@@ -1650,6 +1652,21 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
           Total <span className="tabular-nums">{formatMoney(billTotal)}</span>
         </p>
       </div>
+      <section>
+        <legend className={`mb-2 text-xs font-semibold uppercase tracking-wider ${t.muted}`}>
+          <Receipt className="mr-1 inline size-3.5" /> Tax (optional)
+        </legend>
+        <div className={`grid gap-4 p-3 sm:grid-cols-2 ${t.radius} ${t.chip}`}>
+          <Input
+            t={t} label="Tax reference" maxLength={64} autoComplete="off"
+            value={taxRef} onChange={(e) => { setTaxRef(e.target.value.toUpperCase()); clearErr('tax_reference') }}
+            error={errors.tax_reference} placeholder="Invoice / KRA eTIMS code"
+          />
+          <p className={`self-end pb-2 text-[11px] ${t.muted}`}>
+            The invoice or eTIMS code this bill was taxed under — saved on the booking for the records.
+          </p>
+        </div>
+      </section>
       {mode === 'reserve' ? (
         <section>
           <legend className={`mb-2 text-xs font-semibold uppercase tracking-wider ${t.muted}`}>Deposit</legend>
@@ -1778,7 +1795,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
         ? /^(guest_|guests$|referrer_|companions$)/.test(k) || /^c\d+(name|phone|email)$/.test(k)
         : i === 2
           ? /^(room|start|end|days|hours|companions$)/.test(k) || /^c\d+room$/.test(k)
-          : /^(deposit|payments?|packages|detail)$/.test(k) || /^p\d+(amount|method|reference|paid_at)$/.test(k)
+          : /^(deposit|payments?|packages|detail|tax_reference)$/.test(k) || /^p\d+(amount|method|reference|paid_at)$/.test(k)
 
   /** Per-card gate — Next only advances when the current card passes its checks. */
   const cardOk = (i: number) => {
@@ -1786,7 +1803,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
     const emailOk = (v: string) => !v.trim() || /^\S+@\S+\.\S+$/.test(v.trim())
     if (i === 1) {
       if (!form.guest_name.trim()) errs.guest_name = "The guest's name is required."
-      if (!phoneDone) errs.guest_phone = 'Enter a valid phone number.'
+      if (digits(form.guest_phone) && !phoneDone) errs.guest_phone = 'Enter a valid phone number.'
       if (!emailOk(form.guest_email)) errs.guest_email = 'Enter a valid email address.'
       companions.forEach((c, j) => {
         if (!c.name.trim()) errs[`c${j}name`] = 'Their name is required.'
@@ -1856,10 +1873,9 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
         : ['room', 'start', 'end', 'days', 'hours', 'companions'].some((k) => f[k]) ? 2
           : lastCard
 
-  // Live coverage — the share of required fields already filled: the contact's phone
-  // and name, a room, and every extra guest's name and room.
+  // Live coverage — the share of required fields already filled: the contact's
+  // name, a room, and every extra guest's name and room.
   const covered = [
-    phoneDone,
     !!form.guest_name.trim(),
     !!chosen,
     ...companions.map((c) => !!c.name.trim()),

@@ -280,6 +280,8 @@ export interface Booking {
   end: string
   nights: number
   deposit: string | null
+  /** Tax invoice / reference code recorded at the desk — optional. */
+  tax_reference: string
   /** Estimated charge — every booked room × its billed nights (day rest = flat)
    *  plus any extra packages sold on the booking. */
   bill: string
@@ -396,7 +398,7 @@ export interface AddPackageResult {
 export interface BookingRegister {
   room: number
   guest_name: string
-  guest_phone: string
+  guest_phone?: string
   guest_email?: string
   guest_id_type?: GuestIdType | ''
   guest_id_number?: string
@@ -414,6 +416,8 @@ export interface BookingRegister {
   start: string
   end: string
   deposit?: number | null
+  /** Tax invoice / reference code for the bill — optional. */
+  tax_reference?: string
 }
 
 /** Hours a day-rest booking occupies the room, derived from its start and end. */

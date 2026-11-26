@@ -213,8 +213,8 @@ function GuestRow({ t, b, i, now, to }: { t: WorkspaceTheme; b: Booking; i: numb
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold group-hover:underline">{b.guest_name}</p>
             <p className={`truncate text-xs ${t.muted}`}>
-              <Phone className="mr-1 inline size-3" />{b.guest_phone}
-              {b.deposit ? <span className="mx-1.5">·</span> : ''}
+              {b.guest_phone && <><Phone className="mr-1 inline size-3" />{b.guest_phone}</>}
+              {b.guest_phone && b.deposit ? <span className="mx-1.5">·</span> : ''}
               {b.deposit ? <><Wallet className="mr-1 inline size-3" />deposit {formatMoney(b.deposit)}</> : ''}
             </p>
             {(b.guest_id_number || b.guest_email || b.guest_nationality) && (
@@ -464,9 +464,11 @@ function TxnRow({ t, b, i, now, busy, to, onCheckin, onCancel }: { t: WorkspaceT
           </span>
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold group-hover:underline">{b.guest_name}</p>
-            <p className={`truncate text-xs ${t.muted}`}>
-              <Phone className="mr-1 inline size-3" />{b.guest_phone}
-            </p>
+            {b.guest_phone && (
+              <p className={`truncate text-xs ${t.muted}`}>
+                <Phone className="mr-1 inline size-3" />{b.guest_phone}
+              </p>
+            )}
           </div>
         </Link>
       </td>
