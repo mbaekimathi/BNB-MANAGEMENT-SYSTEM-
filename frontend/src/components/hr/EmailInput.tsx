@@ -104,36 +104,38 @@ export function EmailInput({ t, label, error, value, onChange, placeholder = 'us
     <div className="flex min-w-0 flex-col gap-1">
       {label && <span className={`text-[11px] font-medium ${t.muted}`}>{label}</span>}
       <div
-        className={`relative flex h-10 w-full min-w-0 items-stretch transition focus-within:ring-2 ${t.radius} ${t.chip} ${t.ring} ${
+        className={`relative flex w-full min-w-0 flex-col transition focus-within:ring-2 sm:h-10 sm:flex-row sm:items-stretch ${t.radius} ${t.chip} ${t.ring} ${
           error ? 'ring-1 ring-rose-500/60' : ''
         }`}
       >
-        <span className={`grid w-8 shrink-0 place-items-center ${t.muted}`}>
-          <AtSign className="size-4" />
-        </span>
-        <input
-          type="text"
-          inputMode="email"
-          autoComplete="off"
-          required={required}
-          value={shown}
-          placeholder={placeholder}
-          onFocus={() => setFocused(true)}
-          onBlur={blur}
-          onChange={(e) => typed(e.target.value)}
-          className="min-w-0 flex-1 bg-transparent pr-3 text-sm outline-none [color-scheme:light] dark:[color-scheme:dark]"
-        />
+        <div className="flex h-10 min-w-0 flex-1 items-stretch">
+          <span className={`grid w-8 shrink-0 place-items-center ${t.muted}`}>
+            <AtSign className="size-4" />
+          </span>
+          <input
+            type="text"
+            inputMode="email"
+            autoComplete="off"
+            required={required}
+            value={shown}
+            placeholder={placeholder}
+            onFocus={() => setFocused(true)}
+            onBlur={blur}
+            onChange={(e) => typed(e.target.value)}
+            className="min-w-0 flex-1 bg-transparent pr-3 text-sm outline-none [color-scheme:light] dark:[color-scheme:dark]"
+          />
+        </div>
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
           aria-haspopup="listbox"
           aria-expanded={open}
           aria-label="Select email provider"
-          className={`flex shrink-0 items-center gap-1.5 border-l border-inherit px-2.5 text-sm ${t.muted}`}
+          className={`flex h-10 shrink-0 items-center gap-1.5 border-t border-inherit px-2.5 text-sm sm:h-auto sm:border-l sm:border-t-0 ${t.muted}`}
         >
           <Mark p={current} />
-          <span className="font-medium">@{eff}</span>
-          <ChevronDown className={`size-3.5 opacity-60 transition ${open ? 'rotate-180' : ''}`} />
+          <span className="min-w-0 flex-1 truncate text-left font-medium">@{eff}</span>
+          <ChevronDown className={`size-3.5 opacity-60 transition ${open ? 'rotate-180' : ''} ml-auto sm:ml-0`} />
         </button>
         <AnimatePresence>
           {open && (

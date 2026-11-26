@@ -120,7 +120,7 @@ export function PhoneInput({ t, label, error, value, onChange, required }: Props
     <div className="flex min-w-0 flex-col gap-1">
       {label && <span className={`text-[11px] font-medium ${t.muted}`}>{label}</span>}
       <div
-        className={`relative flex h-10 w-full min-w-0 items-stretch transition focus-within:ring-2 ${t.radius} ${t.chip} ${t.ring} ${
+        className={`relative flex w-full min-w-0 flex-col transition focus-within:ring-2 sm:h-10 sm:flex-row sm:items-stretch ${t.radius} ${t.chip} ${t.ring} ${
           error ? 'ring-1 ring-rose-500/60' : ''
         }`}
       >
@@ -130,11 +130,12 @@ export function PhoneInput({ t, label, error, value, onChange, required }: Props
           aria-haspopup="listbox"
           aria-expanded={open}
           aria-label="Select country code"
-          className={`flex shrink-0 items-center gap-1.5 border-r border-inherit px-2.5 text-sm ${t.muted}`}
+          className={`flex h-10 shrink-0 items-center gap-1.5 border-b border-inherit px-2.5 text-sm sm:h-auto sm:border-b-0 sm:border-r ${t.muted}`}
         >
           <Flag c={country} />
           <span className="font-medium">+{country.dial}</span>
-          <ChevronDown className={`size-3.5 opacity-60 transition ${open ? 'rotate-180' : ''}`} />
+          <span className="min-w-0 flex-1 truncate text-left text-xs opacity-70 sm:hidden">{country.name}</span>
+          <ChevronDown className={`size-3.5 opacity-60 transition ${open ? 'rotate-180' : ''} ml-auto sm:ml-0`} />
         </button>
         <input
           type="tel"
@@ -145,7 +146,7 @@ export function PhoneInput({ t, label, error, value, onChange, required }: Props
           placeholder="700 000 000"
           onChange={(e) => emit(e.target.value.replace(/[^\d\s-]/g, ''))}
           onBlur={done}
-          className="min-w-0 flex-1 bg-transparent px-3 text-sm outline-none [color-scheme:light] dark:[color-scheme:dark]"
+          className="h-10 min-w-0 flex-1 bg-transparent px-3 text-sm outline-none sm:h-auto [color-scheme:light] dark:[color-scheme:dark]"
         />
         <AnimatePresence>
           {open && (
