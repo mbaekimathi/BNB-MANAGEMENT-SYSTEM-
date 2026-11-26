@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { Check, ChevronDown, Search } from 'lucide-react'
+import { Check, ChevronDown, Phone, Search } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { COUNTRIES, DEFAULT_COUNTRY, dialCountry, flagUrl, subscriberLength, type Country } from '../../lib/countries'
 import type { WorkspaceTheme } from '../../lib/workspaces'
@@ -130,24 +130,29 @@ export function PhoneInput({ t, label, error, value, onChange, required }: Props
           aria-haspopup="listbox"
           aria-expanded={open}
           aria-label="Select country code"
-          className={`flex h-10 shrink-0 items-center gap-1.5 border-b border-inherit px-2.5 text-sm sm:h-auto sm:border-b-0 sm:border-r ${t.muted}`}
+          className={`flex h-10 shrink-0 items-center gap-1.5 border-b border-inherit px-2.5 text-sm max-sm:bg-black/[0.04] max-sm:dark:bg-white/[0.04] sm:h-auto sm:border-b-0 sm:border-r ${t.muted}`}
         >
           <Flag c={country} />
           <span className="font-medium">+{country.dial}</span>
           <span className="min-w-0 flex-1 truncate text-left text-xs opacity-70 sm:hidden">{country.name}</span>
           <ChevronDown className={`size-3.5 opacity-60 transition ${open ? 'rotate-180' : ''} ml-auto sm:ml-0`} />
         </button>
-        <input
-          type="tel"
-          inputMode="tel"
-          autoComplete="tel-national"
-          required={required}
-          value={local}
-          placeholder="700 000 000"
-          onChange={(e) => emit(e.target.value.replace(/[^\d\s-]/g, ''))}
-          onBlur={done}
-          className="h-10 min-w-0 flex-1 bg-transparent px-3 text-sm outline-none sm:h-auto [color-scheme:light] dark:[color-scheme:dark]"
-        />
+        <div className="flex h-10 min-w-0 flex-1 items-stretch sm:h-auto">
+          <span className={`grid w-8 shrink-0 place-items-center sm:hidden ${t.muted}`}>
+            <Phone className="size-4" />
+          </span>
+          <input
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel-national"
+            required={required}
+            value={local}
+            placeholder="700 000 000"
+            onChange={(e) => emit(e.target.value.replace(/[^\d\s-]/g, ''))}
+            onBlur={done}
+            className="min-w-0 flex-1 bg-transparent pr-3 text-sm outline-none sm:px-3 [color-scheme:light] dark:[color-scheme:dark]"
+          />
+        </div>
         <AnimatePresence>
           {open && (
             <>

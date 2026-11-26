@@ -185,7 +185,7 @@ export function NatIdInput({ t, label = 'Nationality & ID', error, nationality, 
             className="min-w-0 flex-1 bg-transparent px-3 text-sm outline-none [color-scheme:light] dark:[color-scheme:dark]"
           />
         </div>
-        <div className="flex h-10 min-w-0 items-stretch border-t border-inherit sm:border-l sm:border-t-0">
+        <div className="flex h-10 min-w-0 items-stretch border-t border-inherit max-sm:bg-black/[0.04] max-sm:dark:bg-white/[0.04] sm:border-l sm:border-t-0">
           <select
             value={idType}
             onChange={(e) => onIdType(e.target.value as GuestIdType | '')}

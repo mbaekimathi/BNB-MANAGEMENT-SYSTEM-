@@ -131,7 +131,7 @@ export function EmailInput({ t, label, error, value, onChange, placeholder = 'us
           aria-haspopup="listbox"
           aria-expanded={open}
           aria-label="Select email provider"
-          className={`flex h-10 shrink-0 items-center gap-1.5 border-t border-inherit px-2.5 text-sm sm:h-auto sm:border-l sm:border-t-0 ${t.muted}`}
+          className={`flex h-10 shrink-0 items-center gap-1.5 border-t border-inherit px-2.5 text-sm max-sm:bg-black/[0.04] max-sm:dark:bg-white/[0.04] sm:h-auto sm:border-l sm:border-t-0 ${t.muted}`}
         >
           <Mark p={current} />
           <span className="min-w-0 flex-1 truncate text-left font-medium">@{eff}</span>
