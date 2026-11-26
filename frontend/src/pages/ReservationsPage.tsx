@@ -1355,7 +1355,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
     const title = main ? `Guest 1 · ${form.guest_name.trim() || 'main contact'}` : `Guest ${editing + 2} · ${c!.name.trim() || 'extra guest'}`
     return (
       <motion.div
-        className="fixed inset-0 z-[60] grid place-items-center overflow-y-auto p-4"
+        className="fixed inset-0 z-[60] grid place-items-center overflow-y-auto p-2 sm:p-4"
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       >
         <button type="button" aria-label="Close" onClick={() => setEditing(null)} className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" />
@@ -1363,9 +1363,9 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
           role="dialog" aria-modal="true" aria-label={title}
           initial={{ scale: 0.94, y: 12 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.96, y: 8 }}
           transition={{ type: 'spring', stiffness: 340, damping: 30 }}
-          className={`relative my-auto flex max-h-[calc(100vh-2rem)] w-full max-w-xl flex-col overflow-hidden shadow-2xl ${t.radius} ${t.root}`}
+          className={`relative my-auto flex max-h-[calc(100dvh-1rem)] w-full max-w-xl flex-col overflow-hidden shadow-2xl sm:max-h-[calc(100dvh-2rem)] ${t.radius} ${t.root}`}
         >
-          <header className="flex items-center justify-between gap-3 border-b border-slate-900/10 px-5 py-4 dark:border-white/10">
+          <header className="flex items-center justify-between gap-3 border-b border-slate-900/10 px-4 py-3 sm:px-5 sm:py-4 dark:border-white/10">
             <div className="flex min-w-0 items-center gap-3">
               <span className={`grid size-10 shrink-0 place-items-center ${t.radius} ${t.iconBox}`}>
                 <CalendarClock className="size-5" />
@@ -1380,7 +1380,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
             </button>
           </header>
 
-          <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
+          <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-5 sm:py-5">
             {main ? (
               <section>
                 <legend className={`mb-2 text-xs font-semibold uppercase tracking-wider ${t.muted}`}>Room</legend>
@@ -1442,7 +1442,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
             )}
           </div>
 
-          <footer className="flex justify-end gap-2 border-t border-slate-900/10 px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] dark:border-white/10">
+          <footer className="flex justify-end gap-2 border-t border-slate-900/10 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5 sm:py-4 sm:pb-[max(1rem,env(safe-area-inset-bottom))] dark:border-white/10">
             <Button t={t} onClick={() => setEditing(null)}>Done</Button>
           </footer>
         </motion.div>
@@ -1797,12 +1797,12 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
               const bal = due - paid
               return (
                 <div key={p.gi} className={`overflow-hidden ${t.radius} ${t.chip}`}>
-                  <p className={`flex items-center gap-2 px-3 py-2 text-xs font-semibold`}>
+                  <p className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 px-3 py-2 text-xs font-semibold`}>
                     <span className={`grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-bold ${t.iconBox}`}>{p.gi + 1}</span>
-                    <span className="min-w-0 truncate">
+                    <span className="min-w-0 flex-1 truncate">
                       Guest {p.gi + 1}{p.name ? ` · ${p.name}` : ''} — {p.room.name}
                     </span>
-                    <span className="ml-auto shrink-0 tabular-nums">
+                    <span className="ml-auto tabular-nums">
                       due {formatMoney(due)}
                       {row.method === 'later' && <span className="text-sky-600 dark:text-sky-400"> · pays later</span>}
                       {paid > 0 && bal > 0 && <span className="text-amber-600 dark:text-amber-400"> · balance {formatMoney(bal)}</span>}
@@ -2074,13 +2074,13 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
         </motion.div>
       </AnimatePresence>
 
-      <div className="mt-4 flex items-center gap-2">
+      <div className="mt-4 flex flex-wrap items-center gap-2">
         {cur === 0 ? (
           <Button t={t} variant="ghost" onClick={() => onDone()}>{doneLabel}</Button>
         ) : (
           <Button t={t} variant="ghost" onClick={() => go(cur - 1)}><ArrowLeft className="size-3.5" /> Back</Button>
         )}
-        <span className="ml-auto flex items-center gap-3">
+        <span className="ml-auto flex flex-wrap items-center justify-end gap-2 sm:gap-3">
           {cur === lastCard && missing.length > 0 && (
             <span className={`text-[11px] ${t.muted}`}>Still needed: {missing.join(', ')}</span>
           )}

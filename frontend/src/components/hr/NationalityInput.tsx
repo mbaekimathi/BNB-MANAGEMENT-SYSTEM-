@@ -158,49 +158,53 @@ export function NatIdInput({ t, label = 'Nationality & ID', error, nationality, 
     <div className="flex min-w-0 flex-col gap-1">
       {label && <span className={`text-[11px] font-medium ${t.muted}`}>{label}</span>}
       <div
-        className={`relative flex h-10 w-full min-w-0 items-stretch transition focus-within:ring-2 ${t.radius} ${t.chip} ${t.ring} ${
+        className={`relative flex w-full min-w-0 flex-col transition focus-within:ring-2 sm:h-10 sm:flex-row sm:items-stretch ${t.radius} ${t.chip} ${t.ring} ${
           error ? 'ring-1 ring-rose-500/60' : ''
         }`}
       >
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          aria-haspopup="listbox"
-          aria-expanded={open}
-          aria-label="Pick nationality from list"
-          className={`flex shrink-0 items-center gap-1.5 border-r border-inherit px-2.5 text-sm ${t.muted}`}
-        >
-          {matched ? <Flag c={matched} /> : <Globe className="size-4 opacity-70" />}
-          <ChevronDown className={`size-3.5 opacity-60 transition ${open ? 'rotate-180' : ''}`} />
-        </button>
-        <input
-          type="text"
-          autoComplete="off"
-          value={nationality}
-          placeholder="Nationality"
-          aria-label="Nationality"
-          onFocus={() => setOpen(true)}
-          onChange={(e) => onNationality(e.target.value)}
-          className="min-w-0 flex-1 bg-transparent px-3 text-sm outline-none [color-scheme:light] dark:[color-scheme:dark]"
-        />
-        <select
-          value={idType}
-          onChange={(e) => onIdType(e.target.value as GuestIdType | '')}
-          aria-label="ID document type"
-          className="shrink-0 border-l border-inherit bg-transparent px-2 text-sm outline-none [&>option]:bg-white [&>option]:text-slate-900 dark:[&>option]:bg-slate-900 dark:[&>option]:text-slate-100"
-        >
-          {emptyTypeLabel !== undefined && <option value="">{emptyTypeLabel}</option>}
-          {GUEST_ID_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <input
-          type="text"
-          autoComplete="off"
-          value={idNumber}
-          placeholder="Number"
-          aria-label="ID document number"
-          onChange={(e) => onIdNumber(e.target.value)}
-          className="w-32 shrink-0 border-l border-inherit bg-transparent px-3 text-sm outline-none"
-        />
+        <div className="flex h-10 min-w-0 flex-1 items-stretch">
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            aria-haspopup="listbox"
+            aria-expanded={open}
+            aria-label="Pick nationality from list"
+            className={`flex shrink-0 items-center gap-1.5 border-r border-inherit px-2.5 text-sm ${t.muted}`}
+          >
+            {matched ? <Flag c={matched} /> : <Globe className="size-4 opacity-70" />}
+            <ChevronDown className={`size-3.5 opacity-60 transition ${open ? 'rotate-180' : ''}`} />
+          </button>
+          <input
+            type="text"
+            autoComplete="off"
+            value={nationality}
+            placeholder="Nationality"
+            aria-label="Nationality"
+            onFocus={() => setOpen(true)}
+            onChange={(e) => onNationality(e.target.value)}
+            className="min-w-0 flex-1 bg-transparent px-3 text-sm outline-none [color-scheme:light] dark:[color-scheme:dark]"
+          />
+        </div>
+        <div className="flex h-10 min-w-0 items-stretch border-t border-inherit sm:border-l sm:border-t-0">
+          <select
+            value={idType}
+            onChange={(e) => onIdType(e.target.value as GuestIdType | '')}
+            aria-label="ID document type"
+            className="shrink-0 bg-transparent px-2 text-sm outline-none [&>option]:bg-white [&>option]:text-slate-900 dark:[&>option]:bg-slate-900 dark:[&>option]:text-slate-100"
+          >
+            {emptyTypeLabel !== undefined && <option value="">{emptyTypeLabel}</option>}
+            {GUEST_ID_TYPES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <input
+            type="text"
+            autoComplete="off"
+            value={idNumber}
+            placeholder="Number"
+            aria-label="ID document number"
+            onChange={(e) => onIdNumber(e.target.value)}
+            className="min-w-0 flex-1 border-l border-inherit bg-transparent px-3 text-sm outline-none sm:w-32 sm:flex-none"
+          />
+        </div>
         <CountryMenu t={t} open={open} filtered={filtered} matched={matched} typed={nationality.trim()} onChoose={choose} onClose={() => setOpen(false)} />
       </div>
       {error && <span className="text-[11px] text-rose-500">{error}</span>}
