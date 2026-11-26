@@ -68,6 +68,10 @@ export function EmailInput({ t, label, error, value, onChange, placeholder = 'us
    *  snaps it off at once; anything left leaves on blur — the "@…" clears and
    *  only the credentials stay, with the domain parked on the chip. */
   const shown = focused ? value : local
+  /** While unfocused the domain parks as a faint suffix inside the field — the
+   *  provider chip stays a compact mark + chevron, so the typing area keeps the
+   *  width. Focusing hides it so a domain can be typed through normally. */
+  const suffixOn = !focused
 
   const emit = (l: string, d: string) => {
     const clean = l.trim()
@@ -104,14 +108,14 @@ export function EmailInput({ t, label, error, value, onChange, placeholder = 'us
     <div className="flex min-w-0 flex-col gap-1">
       {label && <span className={`text-[11px] font-medium ${t.muted}`}>{label}</span>}
       <div
-        className={`relative flex w-full min-w-0 flex-col transition focus-within:ring-2 sm:h-10 sm:flex-row sm:items-stretch ${t.radius} ${t.chip} ${t.ring} ${
+        className={`relative flex h-10 w-full min-w-0 items-stretch transition focus-within:ring-2 ${t.radius} ${t.chip} ${t.ring} ${
           error ? 'ring-1 ring-rose-500/60' : ''
         }`}
       >
-        <div className="flex h-10 min-w-0 flex-1 items-stretch">
-          <span className={`grid w-8 shrink-0 place-items-center ${t.muted}`}>
-            <AtSign className="size-4" />
-          </span>
+        <span className={`grid w-8 shrink-0 place-items-center ${t.muted}`}>
+          <AtSign className="size-4" />
+        </span>
+        <div className="relative min-w-0 flex-1">
           <input
             type="text"
             inputMode="email"
@@ -122,8 +126,13 @@ export function EmailInput({ t, label, error, value, onChange, placeholder = 'us
             onFocus={() => setFocused(true)}
             onBlur={blur}
             onChange={(e) => typed(e.target.value)}
-            className="min-w-0 flex-1 bg-transparent pr-3 text-sm outline-none [color-scheme:light] dark:[color-scheme:dark]"
+            className={`h-full w-full bg-transparent text-sm outline-none [color-scheme:light] dark:[color-scheme:dark] ${suffixOn ? 'pr-24' : 'pr-3'}`}
           />
+          {suffixOn && (
+            <span aria-hidden className={`pointer-events-none absolute right-3 top-1/2 max-w-24 -translate-y-1/2 truncate text-sm ${t.muted} opacity-70`}>
+              @{eff}
+            </span>
+          )}
         </div>
         <button
           type="button"
@@ -131,11 +140,10 @@ export function EmailInput({ t, label, error, value, onChange, placeholder = 'us
           aria-haspopup="listbox"
           aria-expanded={open}
           aria-label="Select email provider"
-          className={`flex h-10 shrink-0 items-center gap-1.5 border-t border-inherit px-2.5 text-sm max-sm:bg-black/[0.04] max-sm:dark:bg-white/[0.04] sm:h-auto sm:border-l sm:border-t-0 ${t.muted}`}
+          className={`flex shrink-0 items-center gap-1 border-l border-inherit px-2 text-sm ${t.muted}`}
         >
           <Mark p={current} />
-          <span className="min-w-0 flex-1 truncate text-left font-medium">@{eff}</span>
-          <ChevronDown className={`size-3.5 opacity-60 transition ${open ? 'rotate-180' : ''} ml-auto sm:ml-0`} />
+          <ChevronDown className={`size-3.5 opacity-60 transition ${open ? 'rotate-180' : ''}`} />
         </button>
         <AnimatePresence>
           {open && (

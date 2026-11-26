@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { Check, ChevronDown, Phone, Search } from 'lucide-react'
+import { Check, ChevronDown, Search } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { COUNTRIES, DEFAULT_COUNTRY, dialCountry, flagUrl, subscriberLength, type Country } from '../../lib/countries'
 import type { WorkspaceTheme } from '../../lib/workspaces'
@@ -120,7 +120,7 @@ export function PhoneInput({ t, label, error, value, onChange, required }: Props
     <div className="flex min-w-0 flex-col gap-1">
       {label && <span className={`text-[11px] font-medium ${t.muted}`}>{label}</span>}
       <div
-        className={`relative flex w-full min-w-0 flex-col transition focus-within:ring-2 sm:h-10 sm:flex-row sm:items-stretch ${t.radius} ${t.chip} ${t.ring} ${
+        className={`relative flex h-10 w-full min-w-0 items-stretch transition focus-within:ring-2 ${t.radius} ${t.chip} ${t.ring} ${
           error ? 'ring-1 ring-rose-500/60' : ''
         }`}
       >
@@ -130,29 +130,25 @@ export function PhoneInput({ t, label, error, value, onChange, required }: Props
           aria-haspopup="listbox"
           aria-expanded={open}
           aria-label="Select country code"
-          className={`flex h-10 shrink-0 items-center gap-1.5 border-b border-inherit px-2.5 text-sm max-sm:bg-black/[0.04] max-sm:dark:bg-white/[0.04] sm:h-auto sm:border-b-0 sm:border-r ${t.muted}`}
+          className={`flex shrink-0 items-center gap-1 border-r border-inherit px-2 text-sm ${t.muted}`}
         >
           <Flag c={country} />
-          <span className="font-medium">+{country.dial}</span>
-          <span className="min-w-0 flex-1 truncate text-left text-xs opacity-70 sm:hidden">{country.name}</span>
-          <ChevronDown className={`size-3.5 opacity-60 transition ${open ? 'rotate-180' : ''} ml-auto sm:ml-0`} />
+          <ChevronDown className={`size-3.5 opacity-60 transition ${open ? 'rotate-180' : ''}`} />
         </button>
-        <div className="flex h-10 min-w-0 flex-1 items-stretch sm:h-auto">
-          <span className={`grid w-8 shrink-0 place-items-center sm:hidden ${t.muted}`}>
-            <Phone className="size-4" />
-          </span>
-          <input
-            type="tel"
-            inputMode="tel"
-            autoComplete="tel-national"
-            required={required}
-            value={local}
-            placeholder="700 000 000"
-            onChange={(e) => emit(e.target.value.replace(/[^\d\s-]/g, ''))}
-            onBlur={done}
-            className="min-w-0 flex-1 bg-transparent pr-3 text-sm outline-none sm:px-3 [color-scheme:light] dark:[color-scheme:dark]"
-          />
-        </div>
+        <span aria-hidden className={`grid shrink-0 select-none place-items-center pl-3 pr-1 text-sm ${t.muted}`}>
+          +{country.dial}
+        </span>
+        <input
+          type="tel"
+          inputMode="tel"
+          autoComplete="tel-national"
+          required={required}
+          value={local}
+          placeholder="700 000 000"
+          onChange={(e) => emit(e.target.value.replace(/[^\d\s-]/g, ''))}
+          onBlur={done}
+          className="min-w-0 flex-1 bg-transparent pr-3 text-sm outline-none [color-scheme:light] dark:[color-scheme:dark]"
+        />
         <AnimatePresence>
           {open && (
             <>
