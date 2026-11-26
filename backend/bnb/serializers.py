@@ -605,8 +605,10 @@ class BookingGuestSerializer(serializers.ModelSerializer):
 
 
 # Channels real money moves through — "pay later" is a zero-amount marker a
-# check-in leaves behind, not somewhere cash in or out can flow.
-MONEY_METHODS = [m for m in BookingPayment.Method.values if m != BookingPayment.Method.LATER]
+# check-in leaves behind, not somewhere cash in or out can flow. Compared
+# against the raw value, not Method.LATER, so a partially-synced deploy with
+# an older models.py still boots.
+MONEY_METHODS = [m for m in BookingPayment.Method.values if m != "later"]
 
 
 class BookingPaymentSerializer(serializers.ModelSerializer):
@@ -630,7 +632,7 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         """'later' rows are markers only — they must carry a zero amount, while
         every real money channel names a positive one."""
-        later = attrs.get("method") == BookingPayment.Method.LATER
+        later = attrs.get("method") == "later"
         amount = attrs.get("amount")
         if later and amount not in (None, Decimal(0)):
             raise serializers.ValidationError({"amount": "A pay-later marker carries no amount."})
