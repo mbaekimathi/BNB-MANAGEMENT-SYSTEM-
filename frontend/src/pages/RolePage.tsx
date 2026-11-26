@@ -24,6 +24,7 @@ const ClientsPage = lazy(() => import('./ClientsPage'))
 const ExtraPackagesPage = lazy(() => import('./ExtraPackagesPage'))
 const GuestsInHousePage = lazy(() => import('./GuestsInHousePage'))
 const AllTransactionsPage = lazy(() => import('./GuestsInHousePage').then((m) => ({ default: m.AllTransactionsPage })))
+const CheckOutsPage = lazy(() => import('./GuestsInHousePage').then((m) => ({ default: m.CheckOutsPage })))
 const ReferralsPage = lazy(() => import('./ReferralsPage'))
 const ReservationsPage = lazy(() => import('./ReservationsPage'))
 const DayRestPage = lazy(() => import('./ReservationsPage').then((m) => ({ default: m.DayRestPage })))
@@ -73,7 +74,9 @@ function Overview({ workspace, user, basePath }: { workspace: Workspace; user: E
     <div className="space-y-6">
       <section className={`relative overflow-hidden p-5 sm:p-7 ${t.radius} ${t.card}`}>
         <div className={`pointer-events-none absolute -right-20 -top-24 size-72 rounded-full blur-2xl ${t.glowA}`} />
-        <div className="relative flex flex-col gap-6 xl:flex-row xl:items-center">
+        {/* Phones keep only the essentials — the status counts below (front
+            desk) or a one-line greeting (other roles). Full details show from sm up. */}
+        <div className="relative hidden flex-col gap-6 sm:flex xl:flex-row xl:items-center">
           <div className="flex min-w-0 flex-1 flex-col gap-5 sm:flex-row sm:items-center">
             <Avatar user={user} className={`size-20 sm:size-24 ${t.radius}`} ring={t.ring} />
             <div className="min-w-0 flex-1">
@@ -96,6 +99,11 @@ function Overview({ workspace, user, basePath }: { workspace: Workspace; user: E
           </div>
           {isBranchRole(user.role) && user.branch_detail && <BranchSummary t={t} user={user} />}
         </div>
+        {user.role !== 'branch_receptionist' && (
+          <h2 className={`relative text-xl sm:hidden ${t.heading}`}>
+            {greetingFor(now)}, <span className={t.accentText}>{user.first_name}</span>
+          </h2>
+        )}
         {user.role === 'branch_receptionist' && <FrontDeskRoomStats t={t} basePath={basePath} />}
       </section>
 
@@ -373,7 +381,7 @@ function FrontDeskRoomStats({ t, basePath }: { t: WorkspaceTheme; basePath: stri
   ]
 
   return (
-    <div className="relative mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div className="relative grid grid-cols-2 gap-3 sm:mt-5 lg:grid-cols-4">
       {cards.map((card) => (
         <Link
           key={card.label}
@@ -539,11 +547,36 @@ function DeparturesToday({ t, me, basePath }: { t: WorkspaceTheme; me: Employee;
 }
 
 interface CheckoutAlert {
-  /** `${bookingId}:${stage}` — also the key in `fired`, so it can't repeat. */
+  /** `${bookingId}|${end}|${stage}` — dedupe key in `fired`/`dismissed`, so it
+   *  can't repeat unless the stay's deadline itself moves. */
   key: string
   stage: 'warn' | 'due'
   booking: Booking
   mins: number
+}
+
+/** localStorage keys of checkout pop-ups the receptionist explicitly closed —
+ *  they stay gone across reloads until that stay's deadline changes. */
+const DISMISSED_ALERTS_KEY = 'hs-checkout-alerts-dismissed'
+
+const loadDismissedAlerts = (): Set<string> => {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(DISMISSED_ALERTS_KEY) ?? '[]')
+    if (!Array.isArray(raw)) return new Set()
+    // Keys embed the stay's deadline — drop ones too old to ever match again.
+    const cutoff = Date.now() - 2 * DAY_MS
+    return new Set(raw.filter((k): k is string => typeof k === 'string' && new Date(k.split('|')[1]).getTime() > cutoff))
+  } catch {
+    return new Set()
+  }
+}
+
+const saveDismissedAlerts = (keys: Set<string>) => {
+  try {
+    localStorage.setItem(DISMISSED_ALERTS_KEY, JSON.stringify([...keys]))
+  } catch {
+    // Storage unavailable (private mode etc.) — the close still applies for this session.
+  }
 }
 
 /** Front-desk checkout pop-ups — mounted for the receptionist on every page of
@@ -555,6 +588,7 @@ function CheckoutAlerts({ t }: { t: WorkspaceTheme }) {
   const now = useNow(15_000).getTime()
   const [alerts, setAlerts] = useState<CheckoutAlert[]>([])
   const fired = useRef(new Set<string>())
+  const [dismissed] = useState(loadDismissedAlerts)
 
   // Keep the booking list fresh — new check-ins and check-outs land within a minute.
   useEffect(() => {
@@ -569,43 +603,50 @@ function CheckoutAlerts({ t }: { t: WorkspaceTheme }) {
     const fresh: CheckoutAlert[] = []
     for (const b of live) {
       const ms = new Date(b.end).getTime() - now
-      if (ms <= 0 && sameDay(b.end, now) && !fired.current.has(`${b.id}:due`)) {
-        fired.current.add(`${b.id}:due`)
-        fresh.push({ key: `${b.id}:due`, stage: 'due', booking: b, mins: 0 })
-      } else if (ms > 0 && ms <= WARN_BEFORE_MS && !fired.current.has(`${b.id}:warn`)) {
-        fired.current.add(`${b.id}:warn`)
-        fresh.push({ key: `${b.id}:warn`, stage: 'warn', booking: b, mins: Math.max(1, Math.ceil(ms / 60_000)) })
-      }
+      const stage: CheckoutAlert['stage'] | null = ms <= 0 ? 'due' : ms <= WARN_BEFORE_MS ? 'warn' : null
+      if (!stage || (stage === 'due' && !sameDay(b.end, now))) continue
+      const key = `${b.id}|${b.end}|${stage}`
+      if (fired.current.has(key) || dismissed.has(key)) continue
+      fired.current.add(key)
+      fresh.push({ key, stage, booking: b, mins: Math.max(0, Math.ceil(ms / 60_000)) })
     }
     if (fresh.length) chime(fresh.some((a) => a.stage === 'due') ? 2 : 1)
     // Drop pop-ups for stays checked out elsewhere since the last refresh.
     setAlerts((l) => [...l.filter((a) => liveIds.has(a.booking.id)), ...fresh])
-  }, [now, bookings.data])
+  }, [now, bookings.data, dismissed])
 
-  const dismiss = (key: string) => setAlerts((l) => l.filter((a) => a.key !== key))
+  const dismiss = (key: string, manual: boolean) => {
+    if (manual) {
+      dismissed.add(key)
+      saveDismissedAlerts(dismissed)
+    }
+    setAlerts((l) => l.filter((a) => a.key !== key))
+  }
 
   return (
     <div className="pointer-events-none fixed right-4 top-4 z-[70] flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2">
       <AnimatePresence initial={false}>
         {alerts.map((a) => (
-          <CheckoutToast key={a.key} t={t} alert={a} onClose={() => dismiss(a.key)} />
+          <CheckoutToast key={a.key} t={t} alert={a} onClose={() => dismiss(a.key, true)} onExpire={() => dismiss(a.key, false)} />
         ))}
       </AnimatePresence>
     </div>
   )
 }
 
-/** One checkout pop-up card — amber reminder before the deadline, red at/after it. */
-function CheckoutToast({ t, alert, onClose }: { t: WorkspaceTheme; alert: CheckoutAlert; onClose: () => void }) {
+/** One checkout pop-up card — amber reminder before the deadline, red at/after it.
+ *  `onClose` is the receptionist's explicit dismiss (persisted); `onExpire` is the
+ *  reminder's self-clear timeout (not persisted — it may re-warn after a reload). */
+function CheckoutToast({ t, alert, onClose, onExpire }: { t: WorkspaceTheme; alert: CheckoutAlert; onClose: () => void; onExpire: () => void }) {
   const due = alert.stage === 'due'
-  const closeRef = useRef(onClose)
+  const expireRef = useRef(onExpire)
   useEffect(() => {
-    closeRef.current = onClose
+    expireRef.current = onExpire
   })
   // The reminder clears itself; the due alert stays until dismissed.
   useEffect(() => {
     if (due) return
-    const timer = setTimeout(() => closeRef.current(), 20_000)
+    const timer = setTimeout(() => expireRef.current(), 20_000)
     return () => clearTimeout(timer)
   }, [due])
 
@@ -696,7 +737,7 @@ function ModuleOverview({ workspace, module, basePath }: { workspace: Workspace;
           </span>
           <div className="min-w-0">
             <h2 className={`text-2xl sm:text-3xl ${t.heading}`}>{module.label}</h2>
-            <p className={`mt-1 text-sm ${t.muted}`}>{module.children?.[0]?.description ?? module.description}</p>
+            <p className={`mt-1 hidden text-sm sm:block ${t.muted}`}>{module.children?.[0]?.description ?? module.description}</p>
           </div>
         </div>
       </section>
@@ -796,6 +837,8 @@ export default function RolePage() {
         <ReservationsPage item={active} t={workspace.theme} me={user} />
       ) : active.slug === 'day-rest' ? (
         <DayRestPage item={active} t={workspace.theme} me={user} />
+      ) : active.slug === 'check-out' ? (
+        <CheckOutsPage item={active} t={workspace.theme} me={user} />
       ) : active.slug === 'in-house' ? (
         <GuestsInHousePage item={active} t={workspace.theme} me={user} />
       ) : (

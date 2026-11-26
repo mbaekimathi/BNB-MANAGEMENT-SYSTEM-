@@ -813,9 +813,10 @@ export interface TillDrawing {
   created_at: string
 }
 
-/** One till session — opened with cash, M-Pesa and card floats, closed with a
- *  counted total. `cash_in` is the cash-method booking payments received in the
- *  window; `expected` = float + cash_in − drawings; `over_short` = counted − expected. */
+/** One till session — opened with cash, M-Pesa and card floats, closed with
+ *  each channel's counted total. `*_in` is that channel's booking payments
+ *  received in the window; `expected*` = float + in − channel drawings;
+ *  `over_short*` = counted − expected. */
 export interface TillSession {
   id: number
   branch: number
@@ -832,6 +833,8 @@ export interface TillSession {
   closed_by_name: string | null
   closed_at: string | null
   closing_count: string | null
+  closing_mpesa: string | null
+  closing_card: string | null
   closing_note: string
   drawings: TillDrawing[]
   /** All drawings combined, then each channel on its own. */
@@ -839,13 +842,21 @@ export interface TillSession {
   drawings_cash: string
   drawings_mpesa: string
   drawings_card: string
-  /** Cash payments received during the session, and how many there were. */
+  /** Payments received during the session per channel, and how many there were. */
   cash_in: string
   cash_in_count: number
-  /** What the drawer should hold: float + cash_in − cash drawings. */
+  mpesa_in: string
+  mpesa_in_count: number
+  card_in: string
+  card_in_count: number
+  /** What each channel should hold: opening + payments in − channel drawings. */
   expected: string
-  /** Counted − expected (null while the session is still open). */
+  expected_mpesa: string
+  expected_card: string
+  /** Counted − expected per channel (null while open or uncounted). */
   over_short: string | null
+  over_short_mpesa: string | null
+  over_short_card: string | null
 }
 
 export interface TillOpen {
@@ -857,6 +868,8 @@ export interface TillOpen {
 
 export interface TillClose {
   closing_count: number
+  closing_mpesa?: number | null
+  closing_card?: number | null
   closing_note?: string
 }
 
@@ -1037,11 +1050,14 @@ export const bnb = {
   ),
   /** Open the counter till with a starting float. */
   openTill: (data: TillOpen) => api.post<TillSession>('/bnb/tills/open/', data).then((r) => r.data),
-  /** Close the till with the cash counted in the drawer. */
+  /** Close the till with each channel's counted total. */
   closeTill: (id: number, data: TillClose) => api.post<TillSession>(`/bnb/tills/${id}/close/`, data).then((r) => r.data),
   /** Register cash drawn from an open till. */
   registerDrawing: (id: number, data: TillDrawingRegister) =>
     api.post<TillDrawing>(`/bnb/tills/${id}/drawings/`, data).then((r) => r.data),
+  /** Register a batch of drawings — one entry per channel, saved atomically. */
+  registerDrawings: (id: number, data: TillDrawingRegister[]) =>
+    api.post<TillDrawing[]>(`/bnb/tills/${id}/drawings/`, data).then((r) => r.data),
 }
 
 export const BNB_PAGE_SLUGS = ['']

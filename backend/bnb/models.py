@@ -781,7 +781,7 @@ class StockPurchase(models.Model):
 
 class TillSession(models.Model):
     """One session of the counter till — opened with cash, M-Pesa and card
-    floats, closed with the cash counted in the drawer. A branch can only
+    floats, closed with each channel's counted total. A branch can only
     have one open till at a time (enforced in the viewset, which can see
     the caller's branch)."""
 
@@ -796,6 +796,8 @@ class TillSession(models.Model):
     )
     opened_at = models.DateTimeField(auto_now_add=True)
     closing_count = models.DecimalField("cash counted at close", max_digits=10, decimal_places=2, null=True, blank=True)
+    closing_mpesa = models.DecimalField("M-Pesa counted at close", max_digits=10, decimal_places=2, null=True, blank=True)
+    closing_card = models.DecimalField("card counted at close", max_digits=10, decimal_places=2, null=True, blank=True)
     closing_note = models.CharField("closing note", max_length=200, blank=True)
     closed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,

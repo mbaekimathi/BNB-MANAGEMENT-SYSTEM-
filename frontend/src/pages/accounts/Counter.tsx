@@ -1,11 +1,12 @@
+import axios from 'axios'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-  ArrowDownToLine, ArrowUpFromLine, Calculator, ChevronDown, CircleDollarSign,
+  ArrowDownToLine, ArrowUpFromLine, Calculator, ChevronDown,
   CreditCard, DoorClosed, DoorOpen, Lock, Scale, Smartphone, Wallet,
 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Button, Empty, ErrorNote, Flash, Input, Loading, Panel, Pill, Select, Stat, Textarea } from '../../components/hr/ui'
+import { Button, Empty, ErrorNote, Flash, Input, Loading, Panel, Pill, Stat, Textarea } from '../../components/hr/ui'
 import { parseApiError, type Employee, type FieldErrors } from '../../lib/api'
 import { bnb, DRAWING_LABEL, type DrawingMethod, type TillSession } from '../../lib/bnb'
 import { formatMoney, useApi } from '../../lib/hr'
@@ -149,40 +150,63 @@ export default function Counter({ t, me }: AccountPageProps) {
 
 function TillReport({ t, s, title }: { t: WorkspaceTheme; s: TillSession; title?: string }) {
   const overShort = s.over_short === null ? null : Number(s.over_short)
+  const overShortMpesa = s.over_short_mpesa === null ? null : Number(s.over_short_mpesa)
+  const overShortCard = s.over_short_card === null ? null : Number(s.over_short_card)
   const row = 'flex items-center justify-between gap-3 px-3 py-2.5 text-sm'
+  const icon = `size-4 shrink-0 ${t.accentText}`
+  const osPill = (v: number | null) =>
+    v === null ? null : (
+      <Pill tone={v === 0 ? 'green' : v > 0 ? 'blue' : 'red'}>
+        {v === 0 ? 'Balanced' : v > 0 ? `${formatMoney(v)} over` : `${formatMoney(-v)} short`}
+      </Pill>
+    )
   return (
     <Panel t={t} title={title}>
       <div className="overflow-x-auto">
         <div className={`min-w-[24rem] divide-y divide-slate-900/5 dark:divide-white/5`}>
           <div className={row}>
             <span className="flex items-center gap-2">
-              <Wallet className={`size-4 shrink-0 ${t.accentText}`} /> Opening cash
+              <Wallet className={icon} /> Opening cash
               <span className={`text-xs ${t.muted}`}>— {s.opened_by_name ?? 'staff'}, {fmtDT(s.opened_at)}</span>
             </span>
             <span className="font-medium">{formatMoney(s.opening_float)}</span>
           </div>
           <div className={row}>
             <span className="flex items-center gap-2">
-              <Smartphone className={`size-4 shrink-0 ${t.accentText}`} /> Opening M-Pesa
+              <Smartphone className={icon} /> Opening M-Pesa
             </span>
             <span className="font-medium">{formatMoney(s.opening_mpesa)}</span>
           </div>
           <div className={row}>
             <span className="flex items-center gap-2">
-              <CreditCard className={`size-4 shrink-0 ${t.accentText}`} /> Opening credit card
+              <CreditCard className={icon} /> Opening credit card
             </span>
             <span className="font-medium">{formatMoney(s.opening_card)}</span>
           </div>
           <div className={row}>
             <span className="flex items-center gap-2">
-              <ArrowUpFromLine className={`size-4 shrink-0 ${t.accentText}`} /> Cash received
+              <ArrowUpFromLine className={icon} /> Cash received
               <span className={`text-xs ${t.muted}`}>— {s.cash_in_count} cash {s.cash_in_count === 1 ? 'payment' : 'payments'} on bookings</span>
             </span>
             <span className="font-medium text-emerald-600 dark:text-emerald-300">+{formatMoney(s.cash_in)}</span>
           </div>
           <div className={row}>
             <span className="flex items-center gap-2">
-              <ArrowDownToLine className={`size-4 shrink-0 ${t.accentText}`} /> Drawings out
+              <ArrowUpFromLine className={icon} /> M-Pesa received
+              <span className={`text-xs ${t.muted}`}>— {s.mpesa_in_count} {s.mpesa_in_count === 1 ? 'payment' : 'payments'} on bookings</span>
+            </span>
+            <span className="font-medium text-emerald-600 dark:text-emerald-300">+{formatMoney(s.mpesa_in)}</span>
+          </div>
+          <div className={row}>
+            <span className="flex items-center gap-2">
+              <ArrowUpFromLine className={icon} /> Card received
+              <span className={`text-xs ${t.muted}`}>— {s.card_in_count} {s.card_in_count === 1 ? 'payment' : 'payments'} on bookings</span>
+            </span>
+            <span className="font-medium text-emerald-600 dark:text-emerald-300">+{formatMoney(s.card_in)}</span>
+          </div>
+          <div className={row}>
+            <span className="flex items-center gap-2">
+              <ArrowDownToLine className={icon} /> Drawings out
               <span className={`text-xs ${t.muted}`}>
                 — {s.drawings.length} {s.drawings.length === 1 ? 'drawing' : 'drawings'}
                 {' · '}cash {formatMoney(s.drawings_cash)} · M-Pesa {formatMoney(s.drawings_mpesa)} · card {formatMoney(s.drawings_card)}
@@ -200,26 +224,48 @@ function TillReport({ t, s, title }: { t: WorkspaceTheme; s: TillSession; title?
           ))}
           <div className={`${row} font-semibold`}>
             <span className="flex items-center gap-2">
-              <Scale className={`size-4 shrink-0 ${t.accentText}`} /> Expected in drawer
+              <Scale className={icon} /> Expected in drawer
             </span>
             <span>{formatMoney(s.expected)}</span>
+          </div>
+          <div className={`${row} font-semibold`}>
+            <span className="flex items-center gap-2">
+              <Smartphone className={icon} /> Expected M-Pesa
+            </span>
+            <span>{formatMoney(s.expected_mpesa)}</span>
+          </div>
+          <div className={`${row} font-semibold`}>
+            <span className="flex items-center gap-2">
+              <CreditCard className={icon} /> Expected card
+            </span>
+            <span>{formatMoney(s.expected_card)}</span>
           </div>
           {s.closed_at && (
             <>
               <div className={row}>
                 <span className="flex items-center gap-2">
-                  <Lock className={`size-4 shrink-0 ${t.accentText}`} /> Counted at close
+                  <Lock className={icon} /> Counted cash
                   <span className={`text-xs ${t.muted}`}>— {s.closed_by_name ?? 'staff'}, {fmtDT(s.closed_at)}</span>
                 </span>
-                <span className="font-medium">{formatMoney(s.closing_count ?? 0)}</span>
+                <span className="flex items-center gap-2 font-medium">
+                  {formatMoney(s.closing_count ?? 0)}{osPill(overShort)}
+                </span>
               </div>
               <div className={row}>
                 <span className="flex items-center gap-2">
-                  <CircleDollarSign className={`size-4 shrink-0 ${t.accentText}`} /> Balance check
+                  <Smartphone className={icon} /> Counted M-Pesa
                 </span>
-                <Pill tone={overShort === 0 ? 'green' : overShort! > 0 ? 'blue' : 'red'}>
-                  {overShort === 0 ? 'Balanced' : overShort! > 0 ? `${formatMoney(overShort!)} over` : `${formatMoney(-overShort!)} short`}
-                </Pill>
+                <span className="flex items-center gap-2 font-medium">
+                  {s.closing_mpesa === null ? '—' : formatMoney(s.closing_mpesa)}{osPill(overShortMpesa)}
+                </span>
+              </div>
+              <div className={row}>
+                <span className="flex items-center gap-2">
+                  <CreditCard className={icon} /> Counted card
+                </span>
+                <span className="flex items-center gap-2 font-medium">
+                  {s.closing_card === null ? '—' : formatMoney(s.closing_card)}{osPill(overShortCard)}
+                </span>
               </div>
             </>
           )}
@@ -334,31 +380,57 @@ function OpenTillDialog({ t, me, onClose, onSaved }: { t: WorkspaceTheme; me: Em
 }
 
 export function DrawingDialog({ t, session, onClose, onSaved }: { t: WorkspaceTheme; session: TillSession; onClose: () => void; onSaved: (msg: string) => void }) {
-  const [method, setMethod] = useState<DrawingMethod>('cash')
-  const [amount, setAmount] = useState('')
+  const [cash, setCash] = useState('')
+  const [mpesa, setMpesa] = useState('')
+  const [card, setCard] = useState('')
   const [reason, setReason] = useState('')
   const [givenTo, setGivenTo] = useState('')
   const [errors, setErrors] = useState<FieldErrors>({})
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
 
+  /** One drawing entry per channel that has an amount — sent as a batch. */
+  const entries = ([
+    ['cash', cash],
+    ['mpesa', mpesa],
+    ['visa', card],
+  ] as [DrawingMethod, string][])
+    .filter(([, v]) => v.trim() !== '')
+    .map(([method, v]) => ({ method, amount: Number(v) }))
+
   async function submit(e: FormEvent) {
     e.preventDefault()
-    setBusy(true)
     setErrors({})
+    if (!entries.length) {
+      setMessage('Enter an amount for at least one channel.')
+      return
+    }
+    setBusy(true)
     setMessage('')
     try {
-      const d = await bnb.registerDrawing(session.id, {
-        method,
-        amount: Number(amount),
+      const saved = await bnb.registerDrawings(session.id, entries.map((en) => ({
+        ...en,
         reason: reason.trim(),
         given_to: givenTo.trim(),
-      })
-      onSaved(`${DRAWING_LABEL[d.method]} drawing of ${formatMoney(d.amount)} registered${givenTo.trim() ? ` — ${givenTo.trim()}` : ''}.`)
+      })))
+      const summary = saved.map((d) => `${DRAWING_LABEL[d.method]} ${formatMoney(d.amount)}`).join(' · ')
+      onSaved(`${saved.length === 1 ? 'Drawing' : 'Drawings'} registered — ${summary}${givenTo.trim() ? ` — ${givenTo.trim()}` : ''}.`)
     } catch (err) {
-      const p = parseApiError(err)
-      setErrors(p.fields)
-      setMessage(p.message)
+      if (axios.isAxiosError(err) && Array.isArray(err.response?.data)) {
+        // Batch errors come back as a list — one object per submitted entry,
+        // so each maps back to its channel's field.
+        const fields: FieldErrors = {}
+        err.response.data.forEach((item, i) => {
+          const first = item && typeof item === 'object' ? Object.values(item)[0] : null
+          if (entries[i] && first) fields[entries[i].method] = String(Array.isArray(first) ? first[0] : first)
+        })
+        setErrors(fields)
+        setMessage('Please fix the highlighted fields.')
+      } else {
+        const p = parseApiError(err)
+        setErrors(p.fields)
+        setMessage(p.message)
+      }
     } finally {
       setBusy(false)
     }
@@ -368,14 +440,16 @@ export function DrawingDialog({ t, session, onClose, onSaved }: { t: WorkspaceTh
     <Dialog t={t} title="Register drawing" text="Record money taken out of the till — the report updates automatically." icon={ArrowDownToLine} onClose={onClose} onSubmit={submit}
       footer={<DialogFooter t={t} message={message} onClose={onClose} busy={busy} submitLabel="Register drawing" />}>
       <div className="flex flex-col gap-3 overflow-y-auto px-5 py-5">
-        <Select t={t} label="Drawn from" value={method} onChange={(e) => setMethod(e.target.value as DrawingMethod)} error={errors.method}>
-          <option value="cash">Cash — from the drawer</option>
-          <option value="mpesa">M-Pesa</option>
-          <option value="visa">Visa card</option>
-        </Select>
-        <Input t={t} label="Amount" type="number" min="0.01" step="0.01" required autoFocus
-          placeholder="0.00"
-          value={amount} onChange={(e) => setAmount(e.target.value)} error={errors.amount} />
+        <p className={`text-xs font-semibold uppercase tracking-wide ${t.muted}`}>Amount drawn per channel</p>
+        <Input t={t} label="Cash" type="number" min="0.01" step="0.01" autoFocus
+          placeholder="Drawn from the drawer"
+          value={cash} onChange={(e) => setCash(e.target.value)} error={errors.cash} />
+        <Input t={t} label="M-Pesa" type="number" min="0.01" step="0.01"
+          placeholder="Drawn from the M-Pesa line"
+          value={mpesa} onChange={(e) => setMpesa(e.target.value)} error={errors.mpesa} />
+        <Input t={t} label="Visa card" type="number" min="0.01" step="0.01"
+          placeholder="Drawn from the card account"
+          value={card} onChange={(e) => setCard(e.target.value)} error={errors.visa} />
         <Input t={t} label="Reason" placeholder="e.g. Change for a guest, banking drop"
           value={reason} onChange={(e) => setReason(e.target.value)} error={errors.reason} />
         <Input t={t} label="Given to" placeholder="Who received the money"
@@ -386,14 +460,24 @@ export function DrawingDialog({ t, session, onClose, onSaved }: { t: WorkspaceTh
 }
 
 function CloseTillDialog({ t, session, onClose, onSaved }: { t: WorkspaceTheme; session: TillSession; onClose: () => void; onSaved: (msg: string) => void }) {
-  const [count, setCount] = useState('')
+  const [cash, setCash] = useState('')
+  const [mpesa, setMpesa] = useState('')
+  const [card, setCard] = useState('')
   const [note, setNote] = useState('')
   const [errors, setErrors] = useState<FieldErrors>({})
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const expected = Number(session.expected)
-  const diff = count === '' ? null : Number(count) - expected
+  /** Per-channel count state, each compared against its expected total. */
+  const channels = [
+    { label: 'Cash', value: cash, expected: Number(session.expected) },
+    { label: 'M-Pesa', value: mpesa, expected: Number(session.expected_mpesa) },
+    { label: 'Visa', value: card, expected: Number(session.expected_card) },
+  ]
+  const diffs = channels
+    .filter((c) => c.value !== '')
+    .map((c) => ({ label: c.label, diff: Number(c.value) - c.expected }))
+  const balanced = diffs.length > 0 && diffs.every((d) => d.diff === 0)
 
   async function submit(e: FormEvent) {
     e.preventDefault()
@@ -401,7 +485,12 @@ function CloseTillDialog({ t, session, onClose, onSaved }: { t: WorkspaceTheme; 
     setErrors({})
     setMessage('')
     try {
-      await bnb.closeTill(session.id, { closing_count: Number(count), closing_note: note.trim() })
+      await bnb.closeTill(session.id, {
+        closing_count: Number(cash),
+        closing_mpesa: mpesa === '' ? null : Number(mpesa),
+        closing_card: card === '' ? null : Number(card),
+        closing_note: note.trim(),
+      })
       onSaved('Till closed — the session report is saved in the history below.')
     } catch (err) {
       const p = parseApiError(err)
@@ -413,19 +502,39 @@ function CloseTillDialog({ t, session, onClose, onSaved }: { t: WorkspaceTheme; 
   }
 
   return (
-    <Dialog t={t} title="Close till" text="Count the cash in the drawer — the report compares it against what should be there." icon={DoorClosed} onClose={onClose} onSubmit={submit}
+    <Dialog t={t} title="Close till" text="Count each channel — the report compares every count against what it should hold." icon={DoorClosed} onClose={onClose} onSubmit={submit}
       footer={<DialogFooter t={t} message={message} onClose={onClose} busy={busy} submitLabel="Close till" />}>
       <div className="flex flex-col gap-3 overflow-y-auto px-5 py-5">
-        <div className={`flex items-center justify-between gap-3 px-3 py-2.5 text-sm ${t.radius} ${t.chip}`}>
-          <span className={t.muted}>Expected in drawer</span>
-          <span className="font-semibold">{formatMoney(session.expected)}</span>
+        <div className={`space-y-1 px-3 py-2.5 text-sm ${t.radius} ${t.chip}`}>
+          <div className="flex items-center justify-between gap-3">
+            <span className={t.muted}>Expected — cash</span>
+            <span className="font-semibold">{formatMoney(session.expected)}</span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className={t.muted}>Expected — M-Pesa</span>
+            <span className="font-semibold">{formatMoney(session.expected_mpesa)}</span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className={t.muted}>Expected — Visa card</span>
+            <span className="font-semibold">{formatMoney(session.expected_card)}</span>
+          </div>
         </div>
         <Input t={t} label="Cash counted" type="number" min="0" step="0.01" required autoFocus
-          placeholder="Count the drawer and enter the total"
-          value={count} onChange={(e) => setCount(e.target.value)} error={errors.closing_count} />
-        {diff !== null && (
-          <p className={`text-xs ${diff === 0 ? 'text-emerald-600 dark:text-emerald-300' : 'text-rose-600 dark:text-rose-300'}`}>
-            {diff === 0 ? 'Balanced — the count matches the expected total.' : `${formatMoney(Math.abs(diff))} ${diff > 0 ? 'over' : 'short'} the expected total.`}
+          placeholder="Cash counted in the drawer"
+          value={cash} onChange={(e) => setCash(e.target.value)} error={errors.closing_count} />
+        <Input t={t} label="M-Pesa counted" type="number" min="0" step="0.01"
+          placeholder="M-Pesa balance at close"
+          value={mpesa} onChange={(e) => setMpesa(e.target.value)} error={errors.closing_mpesa} />
+        <Input t={t} label="Visa card counted" type="number" min="0" step="0.01"
+          placeholder="Card balance at close"
+          value={card} onChange={(e) => setCard(e.target.value)} error={errors.closing_card} />
+        {diffs.length > 0 && (
+          <p className={`text-xs ${balanced ? 'text-emerald-600 dark:text-emerald-300' : 'text-rose-600 dark:text-rose-300'}`}>
+            {balanced
+              ? 'Balanced — every count matches its expected total.'
+              : diffs.map((d) => d.diff === 0
+                  ? `${d.label} balanced`
+                  : `${d.label} ${formatMoney(Math.abs(d.diff))} ${d.diff > 0 ? 'over' : 'short'}`).join(' · ')}
           </p>
         )}
         <Textarea t={t} label="Closing note (optional)" placeholder="Handover notes for the next shift."

@@ -454,12 +454,16 @@ def seed_tills(branch, staff, day_payments):
 
         cash_drawn = sum(d.amount for d in draws if d.method == "cash")
         expected = sess.opening_float + cash_in - cash_drawn
+        expected_mpesa = sess.opening_mpesa + mpesa_in - sum(d.amount for d in draws if d.method == "mpesa")
+        expected_card = sess.opening_card + card_in - sum(d.amount for d in draws if d.method == "visa")
         # Close every past day; leave today open for the counter.
         if day < TODAY:
             variance = random.choices(
                 [0, random.randint(-250, -40), random.randint(40, 150)],
                 weights=[80, 12, 8])[0]
             sess.closing_count = max(Decimal(0), expected + Decimal(variance))
+            sess.closing_mpesa = expected_mpesa
+            sess.closing_card = expected_card
             sess.closed_by = random.choice(staff)
             sess.closing_note = "" if variance == 0 else ("Counted short" if variance < 0 else "Slightly over")
             sess.closed_at = at(day, 21, 30 + random.randint(0, 45))

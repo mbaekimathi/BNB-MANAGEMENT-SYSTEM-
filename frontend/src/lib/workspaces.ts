@@ -23,6 +23,7 @@ import {
   LayoutDashboard,
   LifeBuoy,
   ListChecks,
+  LogOut,
   MessageSquare,
   Package,
   PackageCheck,
@@ -696,6 +697,7 @@ export const WORKSPACES: Record<Role, Workspace> = {
         children: [
           { slug: '', label: 'All transactions', short: 'All', icon: Receipt, description: 'In-house guests, reservations and day rests.' },
           { slug: 'in-house', label: 'In house', short: 'In house', icon: Users, description: 'Guests currently checked in.' },
+          { slug: 'check-out', label: 'Check out clients', short: 'Check out', icon: LogOut, description: 'Guests due out today — tick them off and check out several at once.' },
           { slug: 'reservations', label: 'Reservations', short: 'Reserve', icon: CalendarCheck, description: 'Take and change bookings.' },
           { slug: 'day-rest', label: 'Day rest', short: 'Day rest', icon: Hourglass, description: 'Live day-rest sessions and recent ones.' },
         ],

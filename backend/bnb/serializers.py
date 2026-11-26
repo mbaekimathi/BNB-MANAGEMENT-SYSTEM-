@@ -1569,9 +1569,9 @@ class TillDrawingSerializer(serializers.ModelSerializer):
 
 
 class TillSessionSerializer(serializers.ModelSerializer):
-    """A till session with its report computed: cash taken (cash-method booking
-    payments in the session window), drawings out, expected drawer total and the
-    over/short against the counted close."""
+    """A till session with its report computed: payments taken per channel in
+    the session window, drawings out, expected channel totals and the
+    over/short against each counted close."""
 
     branch = serializers.PrimaryKeyRelatedField(
         queryset=Branch.objects.all(), required=False, allow_null=True, default=_UserBranchDefault()
@@ -1588,28 +1588,38 @@ class TillSessionSerializer(serializers.ModelSerializer):
     drawings_card = serializers.SerializerMethodField()
     cash_in = serializers.SerializerMethodField()
     cash_in_count = serializers.SerializerMethodField()
+    mpesa_in = serializers.SerializerMethodField()
+    mpesa_in_count = serializers.SerializerMethodField()
+    card_in = serializers.SerializerMethodField()
+    card_in_count = serializers.SerializerMethodField()
     expected = serializers.SerializerMethodField()
+    expected_mpesa = serializers.SerializerMethodField()
+    expected_card = serializers.SerializerMethodField()
     over_short = serializers.SerializerMethodField()
+    over_short_mpesa = serializers.SerializerMethodField()
+    over_short_card = serializers.SerializerMethodField()
 
     class Meta:
         model = TillSession
         fields = [
             "id", "branch", "branch_name", "status",
             "opened_by", "opened_by_name", "opened_at", "opening_float", "opening_mpesa", "opening_card", "note",
-            "closed_by_name", "closed_at", "closing_count", "closing_note",
+            "closed_by_name", "closed_at", "closing_count", "closing_mpesa", "closing_card", "closing_note",
             "drawings", "drawings_total", "drawings_cash", "drawings_mpesa", "drawings_card",
-            "cash_in", "cash_in_count",
-            "expected", "over_short",
+            "cash_in", "cash_in_count", "mpesa_in", "mpesa_in_count", "card_in", "card_in_count",
+            "expected", "expected_mpesa", "expected_card",
+            "over_short", "over_short_mpesa", "over_short_card",
         ]
         read_only_fields = ["id", "opened_at", "closed_at"]
 
-    def _payments(self, obj):
-        """Cash-method booking payments received inside the session window —
-        the drawer only sees cash, so M-Pesa/card/bank don't count."""
+    def _payments(self, obj, method):
+        """Booking payments of one method received inside the session window —
+        each channel's balance only sees its own payments (bank/other don't
+        flow through the till)."""
         end = obj.closed_at or timezone.now()
         return BookingPayment.objects.filter(
             booking__branch=obj.branch,
-            method=BookingPayment.Method.CASH,
+            method=method,
             created_at__gte=obj.opened_at,
             created_at__lt=end,
         )
@@ -1632,33 +1642,79 @@ class TillSessionSerializer(serializers.ModelSerializer):
     def get_drawings_card(self, obj):
         return str(self._drawings_channel(obj, TillDrawing.Method.VISA))
 
-    def _cash_total(self, obj):
-        # The list queryset annotates `_cash_in`/`_cash_in_count` — instances
-        # built outside it (open/close responses) fall back to asking the DB.
-        if hasattr(obj, "_cash_in"):
-            return Decimal(obj._cash_in)
-        return self._payments(obj).aggregate(s=Sum("amount"))["s"] or Decimal(0)
+    def _channel_total(self, obj, channel, method):
+        """One channel's payments-in total. The list queryset annotates the
+        `_cash_in`/`_mpesa_in`/`_card_in` subqueries — instances built outside
+        it (open/close responses) fall back to asking the DB."""
+        attr = f"_{channel}_in"
+        if hasattr(obj, attr):
+            return Decimal(getattr(obj, attr))
+        return self._payments(obj, method).aggregate(s=Sum("amount"))["s"] or Decimal(0)
+
+    def _channel_count(self, obj, channel, method):
+        attr = f"_{channel}_in_count"
+        if hasattr(obj, attr):
+            return int(getattr(obj, attr))
+        return self._payments(obj, method).count()
 
     def get_cash_in(self, obj):
-        return str(self._cash_total(obj))
+        return str(self._channel_total(obj, "cash", BookingPayment.Method.CASH))
 
     def get_cash_in_count(self, obj):
-        if hasattr(obj, "_cash_in_count"):
-            return int(obj._cash_in_count)
-        return self._payments(obj).count()
+        return self._channel_count(obj, "cash", BookingPayment.Method.CASH)
+
+    def get_mpesa_in(self, obj):
+        return str(self._channel_total(obj, "mpesa", BookingPayment.Method.MPESA))
+
+    def get_mpesa_in_count(self, obj):
+        return self._channel_count(obj, "mpesa", BookingPayment.Method.MPESA)
+
+    def get_card_in(self, obj):
+        return str(self._channel_total(obj, "card", BookingPayment.Method.VISA))
+
+    def get_card_in_count(self, obj):
+        return self._channel_count(obj, "card", BookingPayment.Method.VISA)
 
     def _expected(self, obj):
         """The drawer only holds cash — M-Pesa/card drawings don't touch it."""
-        return obj.opening_float + self._cash_total(obj) - Decimal(self.get_drawings_cash(obj))
+        return obj.opening_float + self._channel_total(obj, "cash", BookingPayment.Method.CASH) - Decimal(self.get_drawings_cash(obj))
+
+    def _expected_mpesa(self, obj):
+        return obj.opening_mpesa + self._channel_total(obj, "mpesa", BookingPayment.Method.MPESA) - Decimal(self.get_drawings_mpesa(obj))
+
+    def _expected_card(self, obj):
+        return obj.opening_card + self._channel_total(obj, "card", BookingPayment.Method.VISA) - Decimal(self.get_drawings_card(obj))
 
     def get_expected(self, obj):
         return str(self._expected(obj))
 
-    def get_over_short(self, obj):
-        """Counted minus expected — positive is cash over, negative is short."""
-        if obj.closed_at is None or obj.closing_count is None:
+    def get_expected_mpesa(self, obj):
+        return str(self._expected_mpesa(obj))
+
+    def get_expected_card(self, obj):
+        return str(self._expected_card(obj))
+
+    @staticmethod
+    def _diff(counted, expected):
+        """Counted minus expected — positive is over, negative is short."""
+        if counted is None:
             return None
-        return str(obj.closing_count - self._expected(obj))
+        return str(counted - expected)
+
+    def get_over_short(self, obj):
+        if obj.closed_at is None:
+            return None
+        return self._diff(obj.closing_count, self._expected(obj))
+
+    def get_over_short_mpesa(self, obj):
+        if obj.closed_at is None:
+            return None
+        return self._diff(obj.closing_mpesa, self._expected_mpesa(obj))
+
+    def get_over_short_card(self, obj):
+        if obj.closed_at is None:
+            return None
+        return self._diff(obj.closing_card, self._expected_card(obj))
 
     def validate_opening_float(self, value):
         if value < 0:
@@ -1683,9 +1739,11 @@ class TillSessionSerializer(serializers.ModelSerializer):
 
 
 class TillCloseSerializer(serializers.Serializer):
-    """Body of the close-till action — the cash counted in the drawer."""
+    """Body of the close-till action — each channel's counted total."""
 
     closing_count = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal("0"))
+    closing_mpesa = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal("0"), required=False, allow_null=True)
+    closing_card = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal("0"), required=False, allow_null=True)
     closing_note = serializers.CharField(max_length=200, required=False, allow_blank=True)
 
     def validate_closing_note(self, value):

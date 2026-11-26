@@ -300,6 +300,7 @@ export function BoardLinks({ t, base, active }: { t: WorkspaceTheme; base: strin
   const links = [
     { slug: '', label: 'All transactions', icon: Receipt },
     { slug: 'in-house', label: 'In house', icon: Users },
+    { slug: 'check-out', label: 'Check out', icon: LogOut },
     { slug: 'reservations', label: 'Reservations', icon: CalendarCheck },
     { slug: 'day-rest', label: 'Day rest', icon: Hourglass },
   ]
@@ -509,6 +510,285 @@ function TxnRow({ t, b, i, now, busy, to, onCheckin, onCancel }: { t: WorkspaceT
               <ArrowUpRight className="size-3.5" /> Open portal
             </LinkButton>
           )}
+        </div>
+      </td>
+    </motion.tr>
+  )
+}
+
+/** Occupied stays whose checkout falls today — or is already past — so the
+ *  desk can tick them off and release the rooms in one go. */
+export function CheckOutsPage({ item, t, me }: { item: NavItem; t: WorkspaceTheme; me: Employee }) {
+  const { data, error, loading, reload, setData } = useApi(() => bnb.bookings({ status: 'occupied' }))
+  const [q, setQ] = useState('')
+  const [picked, setPicked] = useState<ReadonlySet<number>>(new Set())
+  const [busy, setBusy] = useState(false)
+  const [flash, setFlash] = useState({ text: '', bad: false })
+  const now = useNow(30_000).getTime()
+  const base = rolePath(me.role)
+
+  const due = useMemo(
+    () =>
+      (data ?? [])
+        .filter((b) => b.status === 'occupied' && (sameDay(b.end, now) || new Date(b.end).getTime() < now))
+        .sort((a, b) => a.end.localeCompare(b.end)),
+    [data, now],
+  )
+  const match = (b: Booking) => !q || `${b.guest_name} ${b.room_name} ${b.guest_phone} ${b.guest_email} ${b.guest_id_number} ${(b.companions ?? []).map((c) => `${c.name} ${c.id_number} ${c.phone} ${c.email}`).join(' ')}`.toLowerCase().includes(q.toLowerCase())
+  const list = due.filter(match)
+  const chosen = list.filter((b) => picked.has(b.id))
+  const allPicked = list.length > 0 && chosen.length === list.length
+  const overdue = due.filter((b) => new Date(b.end).getTime() < now).length
+  const unpaid = due.filter((b) => Number(b.balance) > 0).length
+  const th = `px-3 py-2.5 text-left text-[11px] font-medium uppercase tracking-wider ${t.muted}`
+
+  function toggle(id: number) {
+    setPicked((s) => {
+      const next = new Set(s)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleAll() {
+    setPicked((s) => {
+      const next = new Set(s)
+      if (allPicked) list.forEach((b) => next.delete(b.id))
+      else list.forEach((b) => next.add(b.id))
+      return next
+    })
+  }
+
+  /** Check out every ticked stay, one call each — a failure stops nothing else. */
+  async function checkOut() {
+    if (!chosen.length || busy) return
+    setBusy(true)
+    setFlash({ text: '', bad: false })
+    const done: Booking[] = []
+    const failed: string[] = []
+    for (const b of chosen) {
+      try {
+        done.push(await bnb.checkoutBooking(b.id))
+      } catch (err) {
+        failed.push(`${b.guest_name}: ${parseApiError(err).message}`)
+      }
+    }
+    if (done.length) setData((l) => l?.map((x) => done.find((d) => d.id === x.id) ?? x) ?? null)
+    setPicked((s) => {
+      const next = new Set(s)
+      done.forEach((d) => next.delete(d.id))
+      return next
+    })
+    setFlash({
+      text: [
+        done.length
+          ? `${done.length} ${done.length === 1 ? 'guest' : 'guests'} checked out — ${done.map((d) => d.room_name).join(', ')} ${done.length === 1 ? 'is' : 'are'} free.`
+          : '',
+        ...failed,
+      ]
+        .filter(Boolean)
+        .join(' '),
+      bad: !!failed.length,
+    })
+    setBusy(false)
+  }
+
+  return (
+    <div className="space-y-5">
+      <PageHeader t={t} icon={item.icon} title={item.label} text={item.description} actions={<LiveBadge t={t} />} />
+
+      <BoardLinks t={t} base={base} active="check-out" />
+
+      {!me.branch ? (
+        <Panel t={t}>
+          <Empty
+            t={t}
+            icon={Building2}
+            title="No branch allocated yet"
+            text="Your account isn't assigned to a BnB branch, so there are no checkouts to show. Ask your manager or IT support to allocate you."
+          />
+        </Panel>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+            <Stat t={t} i={0} icon={LogOut} label="Due out today" value={data ? due.length : '—'} />
+            <Stat t={t} i={1} icon={AlarmClock} label="Overdue checkouts" value={data ? overdue : '—'} />
+            <Stat t={t} i={2} icon={Wallet} label="Unpaid balances" value={data ? unpaid : '—'} />
+            <Stat t={t} i={3} icon={Users} label="Selected" value={chosen.length} />
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative sm:max-w-xs sm:flex-1">
+              <Search className={`pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 ${t.muted}`} />
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search guest, room or phone"
+                className={`h-10 w-full bg-transparent pl-9 pr-3 text-sm outline-none focus:ring-2 ${t.radius} ${t.chip} ${t.ring}`}
+              />
+            </div>
+            <Button t={t} variant="ghost" onClick={reload} className="sm:ml-auto">
+              <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
+            </Button>
+          </div>
+
+          <Flash message={flash.text} tone={flash.bad ? 'red' : 'green'} />
+
+          {error ? (
+            <ErrorNote t={t} message={error} onRetry={reload} />
+          ) : loading && !data ? (
+            <Panel t={t}><Loading t={t} /></Panel>
+          ) : (
+            <Panel t={t} title="Ready to check out" actions={<BoardCount t={t} n={list.length} dot="bg-sky-500" />}>
+              {!list.length ? (
+                <Empty
+                  t={t}
+                  icon={LogOut}
+                  title={due.length ? 'No departures match your search' : 'Nobody is due out today'}
+                  text={due.length ? 'Try a different search.' : 'Guests whose stay ends today — or is already overdue — appear here for a quick batch check out.'}
+                />
+              ) : (
+                <>
+                  <div className={`flex flex-wrap items-center gap-3 border-b px-3 py-3 ${t.sidebarDivider}`}>
+                    <span className={`text-xs font-semibold ${t.muted}`}>
+                      {chosen.length ? `${chosen.length} of ${list.length} selected` : 'Tick the guests leaving now'}
+                    </span>
+                    {unpaid > 0 && <span className={`text-[11px] ${t.muted}`}>· {unpaid} still {unpaid === 1 ? 'owes' : 'owe'} a balance</span>}
+                    <div className="ml-auto flex items-center gap-2">
+                      {chosen.length > 0 && (
+                        <Button t={t} variant="ghost" disabled={busy} onClick={() => setPicked(new Set())}>
+                          Clear
+                        </Button>
+                      )}
+                      <Button t={t} busy={busy} disabled={!chosen.length} onClick={() => void checkOut()}>
+                        <LogOut className="size-3.5" /> Check out{chosen.length ? ` ${chosen.length}` : ''}
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[70rem] table-fixed border-collapse">
+                      <thead>
+                        <tr className={`border-b ${t.sidebarDivider}`}>
+                          <th className={`w-12 ${th}`}>
+                            <input
+                              type="checkbox"
+                              checked={allPicked}
+                              onChange={toggleAll}
+                              aria-label="Select all guests due out"
+                              className="size-4 cursor-pointer align-middle accent-sky-500"
+                            />
+                          </th>
+                          <th className={th}>Guest</th>
+                          <th className={`w-44 ${th}`}>Room</th>
+                          <th className={`w-52 ${th}`}>Stay</th>
+                          <th className={`w-40 ${th}`}>Payment</th>
+                          <th className={`w-36 ${th}`}>Checkout</th>
+                          <th className={`w-32 ${th} text-right`}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <AnimatePresence initial={false}>
+                          {list.map((b, i) => (
+                            <DepartureRow
+                              key={b.id} t={t} b={b} i={i} now={now}
+                              checked={picked.has(b.id)} disabled={busy}
+                              onToggle={() => toggle(b.id)}
+                              to={`${clientPath(me.role)}/${encodeURIComponent(clientKey(b))}`}
+                            />
+                          ))}
+                        </AnimatePresence>
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </Panel>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+/** A departure row with a select box — same guest/room/stay/payment cells as
+ *  the in-house board, so checking out many at once feels familiar. */
+function DepartureRow({ t, b, i, now, checked, disabled, onToggle, to }: {
+  t: WorkspaceTheme
+  b: Booking
+  i: number
+  now: number
+  checked: boolean
+  disabled: boolean
+  onToggle: () => void
+  to: string
+}) {
+  const left = timeLeft(b.end, now)
+  const isOverdue = left.tone === 'red'
+  return (
+    <motion.tr
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      transition={{ delay: Math.min(i, 10) * 0.03, duration: 0.25 }}
+      className={`border-b transition-colors last:border-b-0 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] ${t.sidebarDivider} ${checked ? 'bg-sky-500/[0.06] dark:bg-sky-400/[0.06]' : ''}`}
+    >
+      <td className="px-3 py-3 align-top">
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={disabled}
+          onChange={onToggle}
+          aria-label={`Select ${b.guest_name} for check out`}
+          className="mt-3 size-4 cursor-pointer accent-sky-500 disabled:cursor-not-allowed"
+        />
+      </td>
+      <td className="max-w-0 px-3 py-3 align-top">
+        <Link to={to} title={`Open ${b.guest_name}'s portal`} className="group flex min-w-0 gap-3">
+          <span className={`grid size-10 shrink-0 place-items-center text-xs font-bold ${t.radius} ${t.iconBox}`}>
+            {initials(b.guest_name)}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold group-hover:underline">{b.guest_name}</p>
+            <p className={`truncate text-xs ${t.muted}`}>
+              {b.guest_phone && <><Phone className="mr-1 inline size-3" />{b.guest_phone}</>}
+              {b.guest_phone && b.guest_id_number ? <span className="mx-1.5">·</span> : ''}
+              {b.guest_id_number ? <><IdCard className="mr-1 inline size-3" />{b.guest_id_type_label ?? 'ID'} {b.guest_id_number}</> : ''}
+            </p>
+            {b.guest_notes && (
+              <p className={`truncate text-xs ${t.muted}`} title={b.guest_notes}>
+                <MessageSquare className="mr-1 inline size-3" />{b.guest_notes}
+              </p>
+            )}
+          </div>
+        </Link>
+      </td>
+      <td className="px-3 py-3 align-top text-xs">
+        <p className="flex items-center gap-1.5 font-medium">
+          <BedDouble className="size-3.5 shrink-0" /><span className="truncate">{b.room_name}</span>
+        </p>
+        <p className={`mt-1 ${t.muted}`}>
+          <Users className="mr-1 inline size-3" />{b.guests} {b.guests === 1 ? 'guest' : 'guests'}
+        </p>
+      </td>
+      <td className="px-3 py-3 align-top text-xs">
+        <p><CalendarClock className="mr-1 inline size-3" />{fmtD(b.start)} → {fmtD(b.end)}</p>
+        <p className={`mt-0.5 ${t.muted}`}>{stayLength(b)}</p>
+        <p className={`mt-0.5 font-medium ${isOverdue ? 'text-rose-500' : ''}`}>
+          <Clock className="mr-1 inline size-3" />{new Date(b.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </p>
+      </td>
+      <td className="px-3 py-3 align-top">
+        <PayState t={t} b={b} />
+      </td>
+      <td className="px-3 py-3 align-top">
+        <Pill tone={left.tone}><Clock className="mr-1 inline size-3" />{left.text}</Pill>
+      </td>
+      <td className="px-3 py-3 align-top">
+        <div className="flex items-center justify-end">
+          <LinkButton t={t} to={to} title={`Open ${b.guest_name}'s portal`}>
+            <ArrowUpRight className="size-3.5" /> Open portal
+          </LinkButton>
         </div>
       </td>
     </motion.tr>

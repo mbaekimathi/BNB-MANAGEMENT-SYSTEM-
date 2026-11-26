@@ -149,7 +149,7 @@ class SupplierAdmin(admin.ModelAdmin):
 @admin.register(TillSession)
 class TillSessionAdmin(admin.ModelAdmin):
     ordering = ["-opened_at"]
-    list_display = ["branch", "opened_by", "opened_at", "opening_float", "opening_mpesa", "opening_card", "closed_at", "closing_count"]
+    list_display = ["branch", "opened_by", "opened_at", "opening_float", "opening_mpesa", "opening_card", "closed_at", "closing_count", "closing_mpesa", "closing_card"]
     list_filter = ["branch", "closed_at"]
     readonly_fields = ["opened_at"]
     inlines = [TillDrawingInline]

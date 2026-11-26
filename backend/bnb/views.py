@@ -964,32 +964,37 @@ class TillViewSet(
 
     def get_queryset(self):
         user = self.request.user
-        # Cash-in totals annotated as correlated subqueries — without them the
-        # serializer runs ~4 payment queries per session (an N+1 that made the
-        # tills list take ~1000 queries once sessions accumulated).
-        cash = (
-            BookingPayment.objects.filter(
-                booking__branch=OuterRef("branch"),
-                method=BookingPayment.Method.CASH,
-                created_at__gte=OuterRef("opened_at"),
-                created_at__lt=Coalesce(OuterRef("closed_at"), Now()),
+        # Payments-in totals annotated as correlated subqueries — without them the
+        # serializer runs ~4 payment queries per session per channel (an N+1 that
+        # made the tills list take ~1000 queries once sessions accumulated).
+        channel_sub = {}
+        for method, name in (
+            (BookingPayment.Method.CASH, "cash"),
+            (BookingPayment.Method.MPESA, "mpesa"),
+            (BookingPayment.Method.VISA, "card"),
+        ):
+            payments = (
+                BookingPayment.objects.filter(
+                    booking__branch=OuterRef("branch"),
+                    method=method,
+                    created_at__gte=OuterRef("opened_at"),
+                    created_at__lt=Coalesce(OuterRef("closed_at"), Now()),
+                )
+                .order_by()
+                .values("booking__branch")
             )
-            .order_by()
-            .values("booking__branch")
-        )
+            channel_sub[f"_{name}_in"] = Coalesce(
+                Subquery(payments.annotate(s=Sum("amount")).values("s"), output_field=_MONEY),
+                Value(0), output_field=_MONEY,
+            )
+            channel_sub[f"_{name}_in_count"] = Coalesce(
+                Subquery(payments.annotate(n=Count("id")).values("n"), output_field=IntegerField()),
+                Value(0), output_field=IntegerField(),
+            )
         qs = (
             TillSession.objects.select_related("branch", "opened_by", "closed_by")
             .prefetch_related("drawings__created_by")
-            .annotate(
-                _cash_in=Coalesce(
-                    Subquery(cash.annotate(s=Sum("amount")).values("s"), output_field=_MONEY),
-                    Value(0), output_field=_MONEY,
-                ),
-                _cash_in_count=Coalesce(
-                    Subquery(cash.annotate(n=Count("id")).values("n"), output_field=IntegerField()),
-                    Value(0), output_field=IntegerField(),
-                ),
-            )
+            .annotate(**channel_sub)
         )
         if user.role in BNB_ROLES:
             if branch := self.request.query_params.get("branch"):
@@ -1064,7 +1069,7 @@ class TillViewSet(
 
     @action(detail=True, methods=["post"])
     def close(self, request, pk=None):
-        """Close the till with the cash counted in the drawer."""
+        """Close the till with each channel's counted total."""
         session = self.get_object()
         if session.closed_at:
             raise serializers.ValidationError({"detail": "This till session is already closed."})
@@ -1072,20 +1077,28 @@ class TillViewSet(
         closing.is_valid(raise_exception=True)
         with transaction.atomic():
             session.closing_count = closing.validated_data["closing_count"]
+            session.closing_mpesa = closing.validated_data.get("closing_mpesa")
+            session.closing_card = closing.validated_data.get("closing_card")
             session.closing_note = closing.validated_data.get("closing_note", "")
             session.closed_by = request.user
             session.closed_at = timezone.now()
-            session.save(update_fields=["closing_count", "closing_note", "closed_by", "closed_at"])
+            session.save(update_fields=["closing_count", "closing_mpesa", "closing_card", "closing_note", "closed_by", "closed_at"])
             self._clock_out(session.opened_by)
         return Response(self.get_serializer(session).data)
 
     @action(detail=True, methods=["post"])
     def drawings(self, request, pk=None):
-        """Register cash taken out of the till — the session must still be open."""
+        """Register money taken out of the till — the session must still be open.
+        Accepts one drawing object or a list (one entry per channel, saved
+        atomically so a multi-channel drop can't half-save)."""
         session = self.get_object()
         if session.closed_at:
             raise serializers.ValidationError({"detail": "This till session is closed — open a new one to draw."})
-        serializer = TillDrawingSerializer(data=request.data)
+        many = isinstance(request.data, list)
+        if many and not request.data:
+            raise serializers.ValidationError({"detail": "Send at least one drawing."})
+        serializer = TillDrawingSerializer(data=request.data, many=many)
         serializer.is_valid(raise_exception=True)
-        drawing = serializer.save(session=session, created_by=request.user)
-        return Response(TillDrawingSerializer(drawing).data, status=status.HTTP_201_CREATED)
+        with transaction.atomic():
+            serializer.save(session=session, created_by=request.user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
