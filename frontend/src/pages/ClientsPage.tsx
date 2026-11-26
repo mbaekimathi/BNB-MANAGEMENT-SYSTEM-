@@ -271,7 +271,7 @@ export default function ClientsPage({ item, t, me, base }: { item: NavItem; t: W
             />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[40rem] table-fixed border-collapse">
+              <table className="rtable w-full min-w-[40rem] table-fixed border-collapse">
                 <thead>
                   <tr className={`border-b ${t.sidebarDivider}`}>
                     <th className={`w-[30%] ${th}`}>Client</th>
@@ -875,7 +875,7 @@ function VouchersBody({ t, vouchers, loading, th }: {
     return <Empty t={t} icon={Ticket} title="No vouchers yet" text="Credit vouchers this client earns from room changes and downgrades appear here — they never expire." />
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[36rem] border-collapse">
+      <table className="rtable w-full min-w-[36rem] border-collapse">
         <thead>
           <tr className={`border-b ${t.sidebarDivider}`}>
             <th className={th}>Code</th>
@@ -916,7 +916,7 @@ function TxnsBody({ t, txns, loading, th }: {
     return <Empty t={t} icon={Wallet} title="No transactions yet" text="Deposits and payments recorded on this client's bookings will appear here." />
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[44rem] border-collapse">
+      <table className="rtable w-full min-w-[44rem] border-collapse">
         <thead>
           <tr className={`border-b ${t.sidebarDivider}`}>
             <th className={th}>Date</th>
@@ -962,7 +962,7 @@ function HistoryBody({ t, bookings, loading, th, charge, busy, onMove, onAdd, on
   if (loading) return <Loading t={t} />
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[60rem] border-collapse">
+      <table className="rtable w-full min-w-[60rem] border-collapse">
         <thead>
           <tr className={`border-b ${t.sidebarDivider}`}>
             <th className={th}>Room</th>
@@ -1565,18 +1565,21 @@ function CancelStay({ t, b, me, onClose, onDone }: {
 /** The portal's change-room flow — pick a free room, see the credit/cost
  *  difference on the unused nights, settle it, confirm. Money options ask for
  *  the channel they move through; the server re-quotes and applies atomically. */
-function ChangeRoom({ t, b, rooms, dir, onClose, onDone }: {
+function ChangeRoom({ t, b, rooms, dir: dir0, onClose, onDone }: {
   t: WorkspaceTheme
   b: Booking
   rooms: Room[]
-  /** 'up' limits the picker to pricier rooms (upgrade), 'down' to cheaper
-   *  ones (downgrade) — the package popup launches it with a direction. */
+  /** 'up' starts the picker on pricier rooms (upgrade), 'down' on cheaper
+   *  ones (downgrade) — the package popup launches it with a direction,
+   *  and the receptionist can still switch it inside the dialog. */
   dir?: 'up' | 'down'
   onClose: () => void
   onDone: (next: Booking, applied: RoomChangeResult['applied']) => void
 }) {
   const live = useApi(() => bnb.bookings({ active: '1', limit: 500 }))
+  const [dir, setDir] = useState<'up' | 'down' | undefined>(dir0)
   const [room, setRoom] = useState<Room | null>(null)
+  const [roomQ, setRoomQ] = useState('')
   const [option, setOption] = useState<RoomChangeOption | ''>('')
   const [keep, setKeep] = useState(1)
   const [method, setMethod] = useState<PaymentMethod>('cash')
@@ -1611,6 +1614,8 @@ function ChangeRoom({ t, b, rooms, dir, onClose, onDone }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [rooms, live.data, changeFrom, endMs, dir],
   )
+  const q = roomQ.trim().toLowerCase()
+  const shown = sorted.filter((r) => !q || `${r.name} ${r.type_label}`.toLowerCase().includes(q))
 
   const newRate = room ? Number(room.price) : 0
   const credit = nightsLeft * oldRate
@@ -1652,6 +1657,16 @@ function ChangeRoom({ t, b, rooms, dir, onClose, onDone }: {
     setOption('')
     setErr('')
     setKeep(Math.max(1, Math.min(nightsLeft, Math.floor(credit / Number(r.price)) + 1)))
+  }
+
+  /** Switching direction re-filters the list — a picked room may no longer
+   *  fit, so the selection (and its settlement) resets. */
+  const pickDir = (d?: 'up' | 'down') => {
+    if (d === dir) return
+    setDir(d)
+    setRoom(null)
+    setOption('')
+    setErr('')
   }
 
   async function confirm() {
@@ -1717,13 +1732,41 @@ function ChangeRoom({ t, b, rooms, dir, onClose, onDone }: {
                 <legend className={`mb-2 text-xs font-semibold uppercase tracking-wider ${t.muted}`}>
                   {dir === 'up' ? 'Pricier rooms' : dir === 'down' ? 'Cheaper rooms' : 'New room'}
                 </legend>
+                <div className="mb-2 flex flex-wrap gap-1.5" role="radiogroup" aria-label="Move direction">
+                  {([
+                    { id: undefined, icon: ArrowLeftRight, label: 'All rooms' },
+                    { id: 'up', icon: TrendingUp, label: 'Upgrade' },
+                    { id: 'down', icon: TrendingDown, label: 'Downgrade' },
+                  ] as { id?: 'up' | 'down'; icon: LucideIcon; label: string }[]).map((d) => (
+                    <button
+                      key={d.label} type="button" role="radio" aria-checked={dir === d.id}
+                      onClick={() => pickDir(d.id)}
+                      className={`flex h-8 items-center gap-1.5 px-3 text-xs font-semibold transition ${t.radius} ${dir === d.id ? t.navActive : t.chip}`}
+                    >
+                      <d.icon className="size-3.5" /> {d.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="relative mb-2">
+                  <Search className={`pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 ${t.muted}`} />
+                  <input
+                    value={roomQ}
+                    onChange={(e) => setRoomQ(e.target.value)}
+                    placeholder="Search rooms…"
+                    className={`h-9 w-full bg-transparent pl-9 pr-3 text-sm outline-none focus:ring-2 ${t.radius} ${t.chip} ${t.ring}`}
+                  />
+                </div>
                 {live.loading && !live.data ? (
                   <Loading t={t} rows={2} />
                 ) : !sorted.length ? (
-                  <Empty t={t} icon={BedDouble} title={dir === 'up' ? 'No pricier rooms' : 'No cheaper rooms'} text="Use Change room from the actions menu for a like-for-like swap." />
+                  <Empty t={t} icon={BedDouble}
+                    title={dir === 'up' ? 'No pricier rooms' : dir === 'down' ? 'No cheaper rooms' : 'No other rooms'}
+                    text={dir ? 'Pick All rooms above for a like-for-like swap.' : 'There is no other room in this branch to move into.'} />
+                ) : !shown.length ? (
+                  <p className={`px-3 py-2.5 text-xs ${t.radius} ${t.chip}`}>No rooms match your search.</p>
                 ) : (
                   <div className="grid max-h-64 gap-2 overflow-y-auto pr-1 sm:grid-cols-2" role="radiogroup" aria-label="New room">
-                    {sorted.map((r) => {
+                    {shown.map((r) => {
                       const free = freeNow(r)
                       const sel = room?.id === r.id
                       const status = r.id === b.room ? 'Current room'

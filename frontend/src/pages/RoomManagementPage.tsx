@@ -112,7 +112,7 @@ export default function RoomManagementPage({ item, t, me, view = 'list' }: { ite
               />
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[60rem] table-fixed border-collapse">
+                <table className="rtable w-full min-w-[60rem] table-fixed border-collapse">
                   <thead>
                     <tr className={`border-b ${t.sidebarDivider}`}>
                       <th className={th}>Room</th>

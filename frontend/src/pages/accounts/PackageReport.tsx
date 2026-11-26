@@ -98,7 +98,7 @@ function PackageReportBody({ t, me }: AccountPageProps) {
             ) : (
               <>
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[40rem] border-collapse text-left text-[11px]">
+                  <table className="rtable w-full min-w-[40rem] border-collapse text-left text-[11px]">
                     <thead>
                       <tr className="bg-slate-100/90 dark:bg-white/[0.06]">
                         <th className={`${TH} w-8 text-center ${t.muted}`}>#</th>
@@ -132,7 +132,7 @@ function PackageReportBody({ t, me }: AccountPageProps) {
                 {/* Sales log — each sale with its guest and room */}
                 <p className={`border-t ${GRID} ${TXT.amber} bg-amber-500/10 px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider`}>Sales log</p>
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[48rem] border-collapse text-left text-[11px]">
+                  <table className="rtable w-full min-w-[48rem] border-collapse text-left text-[11px]">
                     <thead>
                       <tr className="bg-slate-100/90 dark:bg-white/[0.06]">
                         <th className={`${TH} w-8 text-center ${t.muted}`}>#</th>

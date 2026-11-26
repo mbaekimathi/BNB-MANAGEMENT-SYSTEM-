@@ -231,7 +231,7 @@ function ReportBody({ t, me }: AccountPageProps) {
                     <Empty t={t} icon={BedDouble} title="No stays in this period" text="Bookings overlapping the selected dates appear here with their payment breakdown." />
                   </div>
                 ) : (
-                  <table className="w-full min-w-[64rem] border-collapse text-left text-[11px]">
+                  <table className="rtable w-full min-w-[64rem] border-collapse text-left text-[11px]">
                     <thead>
                       <tr className="bg-slate-100/90 dark:bg-white/[0.06]">
                         <th className={`${thCls} w-8 text-center ${t.muted}`}>#</th>

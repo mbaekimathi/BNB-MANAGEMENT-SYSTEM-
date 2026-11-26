@@ -471,6 +471,8 @@ class BookingPayment(models.Model):
         VISA = "visa", "Visa"
         BANK = "bank", "Bank transfer"
         OTHER = "other", "Other"
+        # Not a money channel — a zero-amount marker that the guest pays later.
+        LATER = "later", "Pay later"
 
     booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name="payments")
     companion = models.ForeignKey(

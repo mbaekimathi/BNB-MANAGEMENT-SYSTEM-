@@ -279,7 +279,10 @@ class BookingViewSet(
         kind = serializer.validated_data.get("kind", Booking.Kind.RESERVATION)
         if kind != Booking.Kind.RESERVATION and not till_open:
             raise serializers.ValidationError({"detail": "The till is closed — open it on the Counter page before registering a client."})
-        collecting = bool(serializer.validated_data.get("deposit")) or bool(serializer.validated_data.get("payments"))
+        # Pay-later marker rows move no money — only positive amounts need the till.
+        collecting = bool(serializer.validated_data.get("deposit")) or any(
+            p.get("amount") and p["amount"] > 0 for p in serializer.validated_data.get("payments") or []
+        )
         if collecting and not till_open:
             raise serializers.ValidationError({"detail": "The till is closed — open it on the Counter page before collecting a deposit or payment."})
         serializer.save(branch=branch, created_by=user)
@@ -290,7 +293,9 @@ class BookingViewSet(
             serializer.validated_data.pop("branch", None)
         # New money via PATCH (a bigger deposit or a payments list) also needs an open till.
         vd = serializer.validated_data
-        collecting = bool(vd.get("payments")) or (vd.get("deposit") or 0) > (serializer.instance.deposit or 0)
+        collecting = any(
+            p.get("amount") and p["amount"] > 0 for p in vd.get("payments") or []
+        ) or (vd.get("deposit") or 0) > (serializer.instance.deposit or 0)
         if collecting and not self._till_open(serializer.instance.branch):
             raise serializers.ValidationError({"detail": "The till is closed — open it on the Counter page before collecting a deposit or payment."})
         serializer.save()

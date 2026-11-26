@@ -91,7 +91,7 @@ export function EmployeeRecords({ t, me }: HrPageProps) {
         <Empty t={t} icon={Users} title="No employees found" text="Try a different search or filter." />
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] table-fixed border-collapse">
+          <table className="rtable w-full min-w-[760px] table-fixed border-collapse">
             <thead>
               <tr className={`border-b ${t.sidebarDivider}`}>
                 <th className={th}>Employee</th>

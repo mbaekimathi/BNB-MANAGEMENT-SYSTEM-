@@ -172,7 +172,7 @@ export default function TeamShiftsPage({ item, t, me, view = 'list' }: { item: N
               />
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[46rem] table-fixed border-collapse">
+                <table className="rtable w-full min-w-[46rem] table-fixed border-collapse">
                   <thead>
                     <tr className={`border-b ${t.sidebarDivider}`}>
                       <th className={th}>Employee</th>
@@ -352,7 +352,7 @@ function PendingPanel({ t, me, onDecided }: { t: WorkspaceTheme; me: Employee; o
         />
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[46rem] table-fixed border-collapse">
+          <table className="rtable w-full min-w-[46rem] table-fixed border-collapse">
             <thead>
               <tr className={`border-b ${t.sidebarDivider}`}>
                 <th className={th}>Employee</th>

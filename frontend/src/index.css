@@ -61,6 +61,42 @@
   }
 }
 
+/* ---------- Responsive tables ----------
+   Below lg a .rtable flattens into one card per row — the header row is
+   dropped and each cell becomes a line inside the card. From lg up the
+   normal table layout applies (including its min-width + scroll wrapper).
+   A cell can set data-th="Label" to prefix its column name. */
+@media screen and (max-width: 1023.98px) {
+  .rtable { display: block; width: 100%; min-width: 0 !important; }
+  .rtable thead { display: none; }
+  .rtable tbody { display: grid; gap: 0.75rem; }
+  .rtable tbody tr {
+    display: block;
+    overflow: hidden;
+    border: 1px solid rgb(148 163 184 / 0.28);
+    border-radius: 0.9rem;
+    background: rgb(148 163 184 / 0.06);
+  }
+  .rtable tbody tr > td,
+  .rtable tbody tr > th {
+    display: block;
+    width: auto !important;
+    max-width: none;
+  }
+  .rtable tbody tr > td + td,
+  .rtable tbody tr > th + td { border-top: 1px solid rgb(148 163 184 / 0.14); }
+  .rtable td[data-th]::before {
+    content: attr(data-th);
+    display: block;
+    margin-bottom: 0.15rem;
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.55;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }

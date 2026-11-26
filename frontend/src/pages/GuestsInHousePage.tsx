@@ -120,7 +120,7 @@ export default function GuestsInHousePage({ item, t, me }: { item: NavItem; t: W
                 />
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[68rem] table-fixed border-collapse">
+                  <table className="rtable w-full min-w-[68rem] table-fixed border-collapse">
                     <thead>
                       <tr className={`border-b ${t.sidebarDivider}`}>
                         <th className={th}>Guest</th>
@@ -410,8 +410,23 @@ export function AllTransactionsPage({ item, t, me }: { item: NavItem; t: Workspa
                   text={txns.length ? 'Try a different search.' : 'In-house guests, upcoming reservations and live day rests appear here.'}
                 />
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[74rem] table-fixed border-collapse">
+                <>
+                {/* Small screens get one card per transaction — the table
+                    only has room from lg up. */}
+                <div className="grid gap-3 lg:hidden">
+                  <AnimatePresence initial={false}>
+                    {list.map((b, i) => (
+                      <TxnCard
+                        key={b.id} t={t} b={b} i={i} now={now} busy={busy === b.id}
+                        to={`${clientPath(me.role)}/${encodeURIComponent(clientKey(b))}`}
+                        onCheckin={() => void act(b, bnb.checkinBooking, `${b.guest_name} checked into ${b.room_name}.`)}
+                        onCancel={() => void act(b, bnb.cancelBooking, `${b.guest_name}'s booking was cancelled.`)}
+                      />
+                    ))}
+                  </AnimatePresence>
+                </div>
+                <div className="hidden overflow-x-auto lg:block">
+                  <table className="rtable w-full min-w-[74rem] table-fixed border-collapse">
                     <thead>
                       <tr className={`border-b ${t.sidebarDivider}`}>
                         <th className={th}>Guest</th>
@@ -437,12 +452,77 @@ export function AllTransactionsPage({ item, t, me }: { item: NavItem; t: Workspa
                     </tbody>
                   </table>
                 </div>
+                </>
               )}
             </Panel>
           )}
         </>
       )}
     </div>
+  )
+}
+
+/** All-transactions card for small screens — same fields as the table row,
+ *  stacked: guest + type, room + window, payment + timing + actions. */
+function TxnCard({ t, b, i, now, busy, to, onCheckin, onCancel }: { t: WorkspaceTheme; b: Booking; i: number; now: number; busy: boolean; to: string; onCheckin: () => void; onCancel: () => void }) {
+  const type = txnType(b)
+  const when = txnTiming(b, now)
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      transition={{ delay: Math.min(i, 10) * 0.03, duration: 0.25 }}
+      className={`space-y-3 p-3.5 ${t.radius} ${t.chip}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <Link to={to} title={`Open ${b.guest_name}'s portal`} className="group flex min-w-0 gap-3">
+          <span className={`grid size-10 shrink-0 place-items-center text-xs font-bold ${t.radius} ${t.iconBox}`}>
+            {initials(b.guest_name)}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold group-hover:underline">{b.guest_name}</p>
+            {b.guest_phone && (
+              <p className={`truncate text-xs ${t.muted}`}>
+                <Phone className="mr-1 inline size-3" />{b.guest_phone}
+              </p>
+            )}
+          </div>
+        </Link>
+        <Pill tone={TXN_TONE[type]}>{type}</Pill>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
+        <span className="flex items-center gap-1.5 font-medium">
+          <BedDouble className="size-3.5 shrink-0" /><span className="truncate">{b.room_name}</span>
+        </span>
+        <span className={t.muted}>
+          <Users className="mr-1 inline size-3" />{b.guests} {b.guests === 1 ? 'guest' : 'guests'}
+        </span>
+        <span className={t.muted}>
+          <CalendarClock className="mr-1 inline size-3" />{fmtD(b.start)} → {fmtD(b.end)} · {stayLength(b)}
+        </span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <PayState t={t} b={b} />
+        <Pill tone={when.tone}><Clock className="mr-1 inline size-3" />{when.text}</Pill>
+        <div className="ml-auto flex items-center gap-2">
+          {b.status === 'reserved' ? (
+            <>
+              <Button t={t} busy={busy} onClick={onCheckin}>
+                <LogIn className="size-3.5" /> Check in
+              </Button>
+              <Button t={t} variant="danger" disabled={busy} onClick={onCancel}>
+                <Ban className="size-3.5" /> Cancel
+              </Button>
+            </>
+          ) : (
+            <LinkButton t={t} to={to} title={`Open ${b.guest_name}'s portal — check out happens there`}>
+              <ArrowUpRight className="size-3.5" /> Open portal
+            </LinkButton>
+          )}
+        </div>
+      </div>
+    </motion.div>
   )
 }
 
@@ -667,7 +747,7 @@ export function CheckOutsPage({ item, t, me }: { item: NavItem; t: WorkspaceThem
                     </div>
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[70rem] table-fixed border-collapse">
+                    <table className="rtable w-full min-w-[70rem] table-fixed border-collapse">
                       <thead>
                         <tr className={`border-b ${t.sidebarDivider}`}>
                           <th className={`w-12 ${th}`}>

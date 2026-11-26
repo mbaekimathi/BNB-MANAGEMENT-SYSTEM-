@@ -9,7 +9,7 @@ import { PhoneInput } from '../components/hr/PhoneInput'
 import { PayState } from './GuestsInHousePage'
 import { clientPath } from '../lib/roles'
 import { parseApiError, type Employee, type FieldErrors } from '../lib/api'
-import { bnb, clientKey, dayRestHours, PAYMENT_METHODS, stayLength, type Booking, type BookingStatus, type ExtraPackage, type GuestIdType, type PaymentMethod, type Room } from '../lib/bnb'
+import { bnb, CHECKIN_METHODS, clientKey, dayRestHours, stayLength, type Booking, type BookingStatus, type ExtraPackage, type GuestIdType, type PaymentMethod, type Room } from '../lib/bnb'
 import { localDigits, phoneComplete } from '../lib/countries'
 import { formatMoney, useApi } from '../lib/hr'
 import { useNow } from '../lib/time'
@@ -172,7 +172,7 @@ export default function ReservationsPage({ item, t, me }: { item: NavItem; t: Wo
                 />
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[60rem] table-fixed border-collapse">
+                  <table className="rtable w-full min-w-[60rem] table-fixed border-collapse">
                     <thead>
                       <tr className={`border-b ${t.sidebarDivider}`}>
                         <th className={th}>Guest</th>
@@ -202,7 +202,7 @@ export default function ReservationsPage({ item, t, me }: { item: NavItem; t: Wo
           {history.length > 0 && (
             <Panel t={t} title="Recent history">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[52rem] table-fixed border-collapse">
+                <table className="rtable w-full min-w-[52rem] table-fixed border-collapse">
                   <thead>
                     <tr className={`border-b ${t.sidebarDivider}`}>
                       <th className={th}>Guest</th>
@@ -364,7 +364,7 @@ export function DayRestPage({ item, t, me }: { item: NavItem; t: WorkspaceTheme;
                 />
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[68rem] table-fixed border-collapse">
+                  <table className="rtable w-full min-w-[68rem] table-fixed border-collapse">
                     <thead>
                       <tr className={`border-b ${t.sidebarDivider}`}>
                         <th className={th}>Guest</th>
@@ -394,7 +394,7 @@ export function DayRestPage({ item, t, me }: { item: NavItem; t: WorkspaceTheme;
           {history.length > 0 && (
             <Panel t={t} title="Recent day rests">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[60rem] table-fixed border-collapse">
+                <table className="rtable w-full min-w-[60rem] table-fixed border-collapse">
                   <thead>
                     <tr className={`border-b ${t.sidebarDivider}`}>
                       <th className={th}>Guest</th>
@@ -975,6 +975,8 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
   // is named without a usable method (or code), or the amount isn't a number.
   const payRowOk = (gi: number, due: number) => {
     const r = payRow(gi, due)
+    // Pay-later marks the whole balance due — nothing else on the row matters.
+    if (r.method === 'later') return true
     const amt = r.amount.trim()
     if (!amt) return true
     if (!(Number(amt) > 0)) return false
@@ -1064,12 +1066,16 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
               payments: payers
                 .map((p) => {
                   const r = payRow(p.gi, dueFor(p))
+                  // 'later' writes a zero-amount marker — the balance stays due
+                  // and the guest settles it progressively after check-in.
+                  const later = r.method === 'later'
                   return {
-                    guest: p.gi, amount: Number(r.amount), method: r.method as PaymentMethod, reference: r.reference.trim(),
-                    paid_at: r.paid_at ? new Date(r.paid_at).toISOString() : null,
+                    guest: p.gi, amount: later ? 0 : Number(r.amount), method: r.method as PaymentMethod,
+                    reference: later ? '' : r.reference.trim(),
+                    paid_at: later ? null : r.paid_at ? new Date(r.paid_at).toISOString() : null,
                   }
                 })
-                .filter((p) => p.amount > 0),
+                .filter((p) => p.amount > 0 || p.method === 'later'),
             }),
       })
       onDone()
@@ -1752,6 +1758,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
                     </span>
                     <span className="ml-auto shrink-0 tabular-nums">
                       due {formatMoney(due)}
+                      {row.method === 'later' && <span className="text-sky-600 dark:text-sky-400"> · pays later</span>}
                       {paid > 0 && bal > 0 && <span className="text-amber-600 dark:text-amber-400"> · balance {formatMoney(bal)}</span>}
                       {paid > 0 && bal < 0 && <span className="text-emerald-600 dark:text-emerald-400"> · overpaid {formatMoney(-bal)}</span>}
                     </span>
@@ -1763,33 +1770,49 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
                         const m = e.target.value as PaymentMethod | ''
                         setPay(p.gi, 'method', m)
                         clearErr(`p${p.gi}method`)
-                        // Switching to cash drops the reference — cash leaves no code.
-                        if (m === 'cash') { setPay(p.gi, 'reference', ''); clearErr(`p${p.gi}reference`) }
+                        if (m === 'later') {
+                          // Pay later moves no money — the row is a zero marker.
+                          setPay(p.gi, 'amount', '0')
+                          setPay(p.gi, 'reference', '')
+                          clearErr(`p${p.gi}amount`); clearErr(`p${p.gi}reference`); clearErr(`p${p.gi}paid_at`)
+                        } else {
+                          if (row.method === 'later') setPay(p.gi, 'amount', String(due))
+                          // Switching to cash drops the reference — cash leaves no code.
+                          if (m === 'cash') { setPay(p.gi, 'reference', ''); clearErr(`p${p.gi}reference`) }
+                        }
                       }}
                       error={errors[`p${p.gi}method`]}
                     >
                       <option value="" disabled>Pick a method</option>
-                      {PAYMENT_METHODS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      {CHECKIN_METHODS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </Select>
                     <Input
                       t={t} label="Amount received" type="number" min={0} step="0.01"
                       value={row.amount} onChange={(e) => { setPay(p.gi, 'amount', e.target.value); clearErr(`p${p.gi}amount`) }}
-                      error={errors[`p${p.gi}amount`]}
+                      error={errors[`p${p.gi}amount`]} disabled={row.method === 'later'}
                     />
-                    {row.method !== '' && row.method !== 'cash' && (
-                      <Input
-                        t={t} label={needsRef(row.method) ? 'Reference' : 'Reference (optional)'} required={needsRef(row.method)}
-                        value={row.reference}
-                        onChange={(e) => { setPay(p.gi, 'reference', e.target.value.toUpperCase()); clearErr(`p${p.gi}reference`) }}
-                        error={errors[`p${p.gi}reference`]} placeholder="Transaction / M-Pesa code" autoComplete="off"
-                      />
+                    {row.method === 'later' ? (
+                      <p className={`px-3 py-2.5 text-xs sm:col-span-2 ${t.radius} ${t.chip}`}>
+                        Nothing collected now — the {formatMoney(due)} balance stays on the bill and the guest settles it progressively.
+                      </p>
+                    ) : (
+                      <>
+                        {row.method !== '' && row.method !== 'cash' && (
+                          <Input
+                            t={t} label={needsRef(row.method) ? 'Reference' : 'Reference (optional)'} required={needsRef(row.method)}
+                            value={row.reference}
+                            onChange={(e) => { setPay(p.gi, 'reference', e.target.value.toUpperCase()); clearErr(`p${p.gi}reference`) }}
+                            error={errors[`p${p.gi}reference`]} placeholder="Transaction / M-Pesa code" autoComplete="off"
+                          />
+                        )}
+                        <Input
+                          t={t} label="Time paid" type="datetime-local"
+                          value={row.paid_at}
+                          onChange={(e) => { setPay(p.gi, 'paid_at', e.target.value); clearErr(`p${p.gi}paid_at`) }}
+                          error={errors[`p${p.gi}paid_at`]}
+                        />
+                      </>
                     )}
-                    <Input
-                      t={t} label="Time paid" type="datetime-local"
-                      value={row.paid_at}
-                      onChange={(e) => { setPay(p.gi, 'paid_at', e.target.value); clearErr(`p${p.gi}paid_at`) }}
-                      error={errors[`p${p.gi}paid_at`]}
-                    />
                   </div>
                 </div>
               )
@@ -1884,6 +1907,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
         for (const p of payers) {
           const due = dueFor(p)
           const row = payRow(p.gi, due)
+          if (row.method === 'later') continue
           const amt = row.amount.trim()
           if (!amt) continue
           if (!(Number(amt) > 0)) {

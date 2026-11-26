@@ -210,7 +210,7 @@ export default function TicketsPage({ item, t, me, view = 'list' }: { item: NavI
           />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[80rem] table-fixed border-collapse">
+            <table className="rtable w-full min-w-[80rem] table-fixed border-collapse">
               <thead>
                 <tr className={`border-b ${t.sidebarDivider}`}>
                   <th className={th}>Ticket</th>

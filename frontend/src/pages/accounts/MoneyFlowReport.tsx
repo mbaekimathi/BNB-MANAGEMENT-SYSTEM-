@@ -195,7 +195,7 @@ function MoneyFlowBody({ t, me }: AccountPageProps) {
             {/* ---- Money movement by channel ---- */}
             <p className={`border-b px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider ${GRID} ${BAND.sky} ${TXT.sky}`}>Money movement by channel</p>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[36rem] border-collapse text-left text-[11px]">
+              <table className="rtable w-full min-w-[36rem] border-collapse text-left text-[11px]">
                 <thead>
                   <tr className="bg-slate-100/90 dark:bg-white/[0.06]">
                     <th className={`${TH} ${t.muted}`}>Channel</th>
@@ -276,7 +276,7 @@ function MoneyFlowBody({ t, me }: AccountPageProps) {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[44rem] border-collapse text-left text-[11px]">
+                <table className="rtable w-full min-w-[44rem] border-collapse text-left text-[11px]">
                   <thead>
                     <tr className="bg-slate-100/90 dark:bg-white/[0.06]">
                       <th className={`${TH} w-8 text-center ${t.muted}`}>#</th>

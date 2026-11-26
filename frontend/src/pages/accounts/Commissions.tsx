@@ -44,7 +44,7 @@ export default function Commissions({ t }: AccountPageProps) {
           />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[46rem] text-left text-xs">
+            <table className="rtable w-full min-w-[46rem] text-left text-xs">
               <thead>
                 <tr>
                   <th className={thCls}>Voucher</th>

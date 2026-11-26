@@ -23,9 +23,22 @@ def spa(request):
     if rel != "." and not rel.startswith(".."):
         candidate = DOCROOT / rel
         if candidate.is_file():
-            return FileResponse(candidate.open("rb"))
+            response = FileResponse(candidate.open("rb"))
+            # Vite content-hashes asset filenames, so they're safe to cache forever.
+            if rel.startswith("assets/"):
+                response["Cache-Control"] = "public, max-age=31536000, immutable"
+            return response
+        # A real file request that misses (e.g. a stale index.html asking for
+        # last deploy's hashed assets) must 404 — answering with index.html
+        # makes browsers fail with confusing MIME-type errors.
+        if rel.startswith("assets/") or "." in posixpath.basename(rel):
+            raise Http404
     if INDEX_HTML.is_file():
-        return HttpResponse(INDEX_HTML.read_text(encoding="utf-8"), content_type="text/html")
+        # index.html points at hashed assets — always revalidate so browsers
+        # pick up new deploys instead of running a stale cached shell.
+        response = HttpResponse(INDEX_HTML.read_text(encoding="utf-8"), content_type="text/html")
+        response["Cache-Control"] = "no-cache"
+        return response
     raise Http404
 
 

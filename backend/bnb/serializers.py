@@ -604,6 +604,11 @@ class BookingGuestSerializer(serializers.ModelSerializer):
         return attrs
 
 
+# Channels real money moves through — "pay later" is a zero-amount marker a
+# check-in leaves behind, not somewhere cash in or out can flow.
+MONEY_METHODS = [m for m in BookingPayment.Method.values if m != BookingPayment.Method.LATER]
+
+
 class BookingPaymentSerializer(serializers.ModelSerializer):
     """One payment row. `guest` is the party position on write: 0 = main guest,
     n = the nth extra guest (companions[n-1])."""
@@ -622,10 +627,16 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
     def get_payer(self, obj):
         return obj.companion.name if obj.companion_id else obj.booking.guest_name
 
-    def validate_amount(self, value):
-        if value <= 0:
-            raise serializers.ValidationError("The amount must be more than zero.")
-        return value
+    def validate(self, attrs):
+        """'later' rows are markers only — they must carry a zero amount, while
+        every real money channel names a positive one."""
+        later = attrs.get("method") == BookingPayment.Method.LATER
+        amount = attrs.get("amount")
+        if later and amount not in (None, Decimal(0)):
+            raise serializers.ValidationError({"amount": "A pay-later marker carries no amount."})
+        if not later and amount is not None and amount <= 0:
+            raise serializers.ValidationError({"amount": "The amount must be more than zero."})
+        return attrs
 
     def validate_reference(self, value):
         return value.strip()
@@ -1125,7 +1136,7 @@ class RoomChangeSerializer(serializers.Serializer):
     # `split` only — how many of the remaining nights to keep in the new room.
     nights = serializers.IntegerField(required=False, min_value=1)
     # Money movement — the channel a top-up comes in or a refund leaves through.
-    method = serializers.ChoiceField(choices=BookingPayment.Method.choices, required=False)
+    method = serializers.ChoiceField(choices=MONEY_METHODS, required=False)
     reference = serializers.CharField(required=False, allow_blank=True, max_length=60)
 
 
@@ -1136,7 +1147,7 @@ class CancelBookingSerializer(serializers.Serializer):
     future stay; 'keep' leaves it on record as a refund due."""
 
     settle = serializers.ChoiceField(choices=["keep", "refund", "voucher"], required=False, default="keep")
-    method = serializers.ChoiceField(choices=BookingPayment.Method.choices, required=False)
+    method = serializers.ChoiceField(choices=MONEY_METHODS, required=False)
     reference = serializers.CharField(required=False, allow_blank=True, max_length=60)
 
 
@@ -1145,7 +1156,7 @@ class PayBookingSerializer(serializers.Serializer):
     buys extra nights on the same room when it's free past checkout."""
 
     amount = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal("0.01"))
-    method = serializers.ChoiceField(choices=BookingPayment.Method.choices)
+    method = serializers.ChoiceField(choices=MONEY_METHODS)
     reference = serializers.CharField(required=False, allow_blank=True, max_length=60)
     # When the money actually moved — blank means it was paid as it was recorded.
     paid_at = serializers.DateTimeField(required=False, allow_null=True)
@@ -1161,7 +1172,7 @@ class AddPackageSerializer(serializers.Serializer):
 
     package = serializers.PrimaryKeyRelatedField(queryset=ExtraPackage.objects.all())
     guest = serializers.IntegerField(required=False, default=0, min_value=0)
-    method = serializers.ChoiceField(choices=BookingPayment.Method.choices, required=False)
+    method = serializers.ChoiceField(choices=MONEY_METHODS, required=False)
     reference = serializers.CharField(required=False, allow_blank=True, max_length=60)
 
 

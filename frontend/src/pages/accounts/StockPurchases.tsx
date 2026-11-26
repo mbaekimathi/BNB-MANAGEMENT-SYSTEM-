@@ -147,7 +147,7 @@ export default function StockPurchases({ t, me }: AccountPageProps) {
           />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[48rem] text-left text-xs">
+            <table className="rtable w-full min-w-[48rem] text-left text-xs">
               <thead>
                 <tr>
                   <th className={thCls}>Date</th>

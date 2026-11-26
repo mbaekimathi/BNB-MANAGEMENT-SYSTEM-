@@ -174,7 +174,9 @@ export interface BookingGuest {
   end: string | null
 }
 
-export type PaymentMethod = 'mpesa' | 'cash' | 'visa' | 'bank' | 'other'
+/** `later` is not a money channel — a zero-amount marker meaning the guest
+ *  pays the balance progressively after check-in. */
+export type PaymentMethod = 'mpesa' | 'cash' | 'visa' | 'bank' | 'other' | 'later'
 
 export const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
   { value: 'mpesa', label: 'M-Pesa' },
@@ -182,6 +184,13 @@ export const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
   { value: 'visa', label: 'Visa' },
   { value: 'bank', label: 'Bank transfer' },
   { value: 'other', label: 'Other' },
+]
+
+/** Method picks for a check-in payment row — the money channels plus the
+ *  pay-later marker for guests settling progressively. */
+export const CHECKIN_METHODS: { value: PaymentMethod; label: string }[] = [
+  ...PAYMENT_METHODS,
+  { value: 'later', label: 'Pay later' },
 ]
 
 /** Money received for a booking — `companion` null means the main guest paid. */

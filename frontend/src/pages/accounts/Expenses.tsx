@@ -147,7 +147,7 @@ export default function Expenses({ t, me }: AccountPageProps) {
           />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[44rem] text-left text-xs">
+            <table className="rtable w-full min-w-[44rem] text-left text-xs">
               <thead>
                 <tr>
                   <th className={thCls}>Date</th>

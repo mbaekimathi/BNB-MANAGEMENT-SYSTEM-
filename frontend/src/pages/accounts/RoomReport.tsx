@@ -107,7 +107,7 @@ function RoomReportBody({ t, me }: AccountPageProps) {
               <div className="p-5"><Empty t={t} icon={DoorOpen} title="No rooms registered" text="Rooms appear here once the manager registers them." /></div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[56rem] border-collapse text-left text-[11px]">
+                <table className="rtable w-full min-w-[56rem] border-collapse text-left text-[11px]">
                   <thead>
                     <tr className="bg-slate-100/90 dark:bg-white/[0.06]">
                       <th className={`${TH} w-8 text-center ${t.muted}`}>#</th>

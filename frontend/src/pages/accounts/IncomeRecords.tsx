@@ -188,7 +188,7 @@ function RoomRevenue({ t, rooms, accounts }: { t: WorkspaceTheme; rooms: Room[];
         />
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[46rem] text-left text-xs">
+          <table className="rtable w-full min-w-[46rem] text-left text-xs">
             <thead>
               <tr>
                 <th className={th(t)}>Room</th>
@@ -264,7 +264,7 @@ function RoomAccount({ t, r, open, bookings, onToggle }: { t: WorkspaceTheme; r:
                   <p className={`py-2 text-xs ${t.muted}`}>No bookings or payments recorded for this room yet.</p>
                 ) : (
                   <div className="overflow-x-auto">
-                  <table className="w-full min-w-[34rem] text-left text-xs">
+                  <table className="rtable w-full min-w-[34rem] text-left text-xs">
                     <thead>
                       <tr className={t.muted}>
                         <th className="py-1.5 pr-3 font-medium">Guest</th>
@@ -312,7 +312,7 @@ function Deposits({ t, bookings }: { t: WorkspaceTheme; bookings: Booking[] }) {
         <Empty t={t} icon={CalendarCheck} title="No deposits yet" text="Deposits taken on reservations and stays appear here automatically." />
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[38rem] text-left text-xs">
+          <table className="rtable w-full min-w-[38rem] text-left text-xs">
             <thead>
               <tr>
                 <th className={th(t)}>Guest</th>
@@ -355,7 +355,7 @@ function AdvancePayments({ t, bookings }: { t: WorkspaceTheme; bookings: Booking
         <Empty t={t} icon={CreditCard} title="No payments yet" text="Payments recorded on bookings appear here automatically." />
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[44rem] text-left text-xs">
+          <table className="rtable w-full min-w-[44rem] text-left text-xs">
             <thead>
               <tr>
                 <th className={th(t)}>Received</th>
@@ -412,7 +412,7 @@ function Refunds({ t, cancelled, live }: { t: WorkspaceTheme; cancelled: Booking
         />
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[40rem] text-left text-xs">
+          <table className="rtable w-full min-w-[40rem] text-left text-xs">
             <thead>
               <tr>
                 <th className={th(t)}>Guest</th>

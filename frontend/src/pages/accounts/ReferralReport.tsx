@@ -84,7 +84,7 @@ function ReferralReportBody({ t, me }: AccountPageProps) {
               <div className="p-5"><Empty t={t} icon={Gift} title="No referrals in this period" text="Gift vouchers created in the selected dates appear here." /></div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[56rem] border-collapse text-left text-[11px]">
+                <table className="rtable w-full min-w-[56rem] border-collapse text-left text-[11px]">
                   <thead>
                     <tr className="bg-slate-100/90 dark:bg-white/[0.06]">
                       <th className={`${TH} w-8 text-center ${t.muted}`}>#</th>

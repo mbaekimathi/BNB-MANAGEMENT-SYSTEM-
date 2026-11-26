@@ -103,7 +103,7 @@ export default function ReferralsPage({ item, t, me }: { item: NavItem; t: Works
                 />
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[62rem] table-fixed border-collapse">
+                  <table className="rtable w-full min-w-[62rem] table-fixed border-collapse">
                     <thead>
                       <tr className={`border-b ${t.sidebarDivider}`}>
                         <th className={`w-[24%] ${th}`}>Referrer</th>
