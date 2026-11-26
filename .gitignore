@@ -17,3 +17,9 @@ backend/media/
 
 # Local DB dumps
 backups/
+
+# Deploy artifacts — the docroot + Passenger restart flags are wired on the
+# server by deploy.sh, not tracked in git.
+public/
+tmp/
+backend/tmp/

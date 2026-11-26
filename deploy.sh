@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Deploys the latest code from GitHub:
+# Full cPanel deploy — run it on the server over SSH:
 #   git pull → backend packages → database migrations → static files
 #            → frontend build (only if npm exists — frontend/dist is tracked
 #              in git, so hosts without Node still get the latest bundle)
+#            → wire the public/ docroot → restart the Passenger app
 #
 # Usage:  bash deploy.sh
 set -euo pipefail
@@ -33,8 +34,14 @@ else
   VENV_PY="$ROOT/backend/.venv/bin/python"
   [ -x "$VENV_PY" ] || VENV_PY="$ROOT/backend/.venv/Scripts/python.exe"   # Windows venv layout
 fi
+if [ ! -x "$VENV_PY" ] && ! command -v "$VENV_PY" >/dev/null 2>&1; then
+  # cPanel "Setup Python App" keeps its venvs under ~/virtualenv/<app>/<version>/ —
+  # fall back to the newest one when nothing else matched.
+  latest="$(ls -dt "$HOME"/virtualenv/*/*/ 2>/dev/null | head -1 || true)"
+  [ -n "$latest" ] && [ -x "${latest}bin/python" ] && VENV_PY="${latest}bin/python"
+fi
 [ -x "$VENV_PY" ] || command -v "$VENV_PY" >/dev/null 2>&1 || \
-  fail "No Python virtualenv found — activate your app's venv first, or run ./start.sh once to create backend/.venv"
+  fail "No Python virtualenv found — activate your app's venv first (or set PYTHON=/path/to/python), or run ./start.sh once to create backend/.venv"
 echo "Using Python: $VENV_PY"
 
 step "Backend: Python packages"
@@ -75,6 +82,76 @@ else
   echo "npm not found — using the pre-built frontend/dist bundle tracked in git."
 fi
 
-printf '\n\033[1;32mDeployed.\033[0m Backend migrated + static collected, frontend dist is in place.\n'
-echo "Restart your app server to pick up the changes (e.g. touch tmp/restart.txt on Passenger,"
-echo "or restart the Django/systemd service you're using)."
+# --- Web docroot ---
+# Django's spa() serves <repo>/public/ as the site docroot: the React build,
+# with static -> backend/staticfiles and media -> backend/media inside it.
+# The links can't live in git (Windows checkouts), so they're wired here.
+step "Wiring the web docroot (public/)"
+DIST="$ROOT/frontend/dist"
+PUBLIC="$ROOT/public"
+
+ensure_link() {
+  # ensure_link <link> <target> — symlink where the filesystem allows it,
+  # a one-way sync copy where it doesn't (FAT docroots, restricted hosts).
+  local link="$1" target="$2"
+  if [ -L "$link" ]; then
+    if [ "$(readlink "$link")" = "$target" ]; then echo "OK   $link"; return 0; fi
+    rm -f "$link"
+  elif [ -e "$link" ]; then
+    rm -rf "$link"
+  fi
+  if ln -s "$target" "$link" 2>/dev/null; then
+    echo "Link $link -> $target"
+  else
+    mkdir -p "$link" && cp -a "$target/." "$link/"
+    echo "Copy $link (symlinks unavailable)"
+  fi
+}
+
+ensure_link "$DIST/static" "$ROOT/backend/staticfiles"
+ensure_link "$DIST/media"  "$ROOT/backend/media"
+
+if [ -L "$PUBLIC" ]; then
+  if [ "$(readlink "$PUBLIC")" = "$DIST" ]; then
+    echo "OK   public/ -> frontend/dist"
+  else
+    rm -f "$PUBLIC" && ln -s "$DIST" "$PUBLIC"
+    echo "Link public/ -> frontend/dist (repointed)"
+  fi
+elif [ -d "$PUBLIC" ]; then
+  # A real directory — the host's own docroot. Sync the build into it,
+  # keeping files that aren't ours (e.g. .well-known for SSL renewals).
+  rm -rf "$PUBLIC/assets"
+  cp -a "$DIST/." "$PUBLIC/"
+  echo "Synced frontend/dist into the existing public/ directory"
+else
+  rm -f "$PUBLIC" 2>/dev/null || true
+  if ln -s "$DIST" "$PUBLIC" 2>/dev/null; then
+    echo "Link public/ -> frontend/dist"
+  else
+    mkdir -p "$PUBLIC" && cp -a "$DIST/." "$PUBLIC/"
+    echo "Copied frontend/dist into public/ (symlinks unavailable)"
+  fi
+fi
+
+# --- Restart ---
+# cPanel "Setup Python App" runs the backend under Phusion Passenger — touching
+# tmp/restart.txt in the app root reloads it. The app root is wherever
+# passenger_wsgi.py lives; if it can't be found, cover the usual layouts anyway
+# (an unread flag file is harmless).
+step "Restarting the app"
+APP_DIRS=()
+for dir in "$ROOT" "$ROOT/backend" "$ROOT/.."; do
+  [ -f "$dir/passenger_wsgi.py" ] && APP_DIRS+=("$dir")
+done
+[ ${#APP_DIRS[@]} -eq 0 ] && APP_DIRS=("$ROOT" "$ROOT/backend")
+for dir in "${APP_DIRS[@]}"; do
+  mkdir -p "$dir/tmp" && touch "$dir/tmp/restart.txt"
+  echo "Restart flag: $dir/tmp/restart.txt"
+done
+if command -v passenger-config >/dev/null 2>&1; then
+  passenger-config restart-app "$ROOT" >/dev/null 2>&1 || true
+fi
+
+printf '\n\033[1;32mDeployed.\033[0m Code pulled, backend migrated + static collected, public/ wired, app restarted.\n'
+echo "If the site still serves the old version, restart it from cPanel → Setup Python App → Restart."
