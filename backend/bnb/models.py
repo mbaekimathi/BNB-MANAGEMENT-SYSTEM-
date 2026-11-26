@@ -250,6 +250,10 @@ class Booking(models.Model):
     end = models.DateTimeField("check-out")
     deposit = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     tax_reference = models.CharField("tax invoice / reference code", max_length=64, blank=True)
+    rate = models.DecimalField(
+        "agreed room rate", max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="The rate settled at the desk — a stay's nightly rate, a day rest's flat charge. Blank bills the room's listed price.",
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="bookings_taken",
@@ -289,6 +293,10 @@ class BookingGuest(models.Model):
     )
     start = models.DateTimeField("this guest's check-in — blank follows the booking", null=True, blank=True)
     end = models.DateTimeField("this guest's check-out — blank follows the booking", null=True, blank=True)
+    rate = models.DecimalField(
+        "agreed room rate", max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="This guest's own room rate — blank bills the room's listed price.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

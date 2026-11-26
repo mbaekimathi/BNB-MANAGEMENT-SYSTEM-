@@ -564,7 +564,7 @@ class BookingGuestSerializer(serializers.ModelSerializer):
     class Meta:
         model = BookingGuest
         fields = ["id", "name", "phone", "email", "id_type", "id_type_label", "id_number",
-                  "nationality", "notes", "room", "room_name", "start", "end"]
+                  "nationality", "notes", "room", "room_name", "start", "end", "rate"]
         read_only_fields = ["id", "room_name"]
 
     def validate_name(self, value):
@@ -590,6 +590,11 @@ class BookingGuestSerializer(serializers.ModelSerializer):
 
     def validate_notes(self, value):
         return value.strip()
+
+    def validate_rate(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError("The room rate can't be negative.")
+        return value
 
     def validate(self, attrs):
         if attrs.get("id_number") and not attrs.get("id_type"):
@@ -784,7 +789,7 @@ class BookingSerializer(serializers.ModelSerializer):
             "guest_id_type", "guest_id_type_label", "guest_id_number",
             "guest_nationality", "guests", "guest_notes", "companions", "payments", "packages",
             "kind", "kind_label", "status", "status_label",
-            "start", "end", "nights", "deposit", "tax_reference", "bill", "paid", "balance",
+            "start", "end", "nights", "deposit", "tax_reference", "rate", "bill", "paid", "balance",
             "referrer_name", "referrer_phone", "referral", "vouchers",
             "created_by_name", "created_at",
         ]
@@ -798,13 +803,18 @@ class BookingSerializer(serializers.ModelSerializer):
         """Estimated charge — every distinct room × its billed nights; a companion's own
         period overrides the booking's, and a shared room bills for the longest stay.
         A day rest is a flat rate per room whatever the hours — the room's own
-        day-rest rate when it has one, the nightly rate otherwise."""
+        day-rest rate when it has one, the nightly rate otherwise. An agreed `rate`
+        settled at the desk replaces the listed price for that room."""
         from math import ceil
         day_rest = obj.kind == Booking.Kind.DAY_REST
+
+        def listed(room):
+            return (room.day_rest_price or room.price) if day_rest else room.price
+
         days, prices = {}, {}
         if obj.room_id:
             days[obj.room_id] = 1 if day_rest else self.get_nights(obj)
-            prices[obj.room_id] = (obj.room.day_rest_price or obj.room.price) if day_rest else obj.room.price
+            prices[obj.room_id] = obj.rate if obj.rate is not None else listed(obj.room)
         for c in obj.companions.all():
             if not c.room_id:
                 continue
@@ -814,8 +824,8 @@ class BookingSerializer(serializers.ModelSerializer):
                 s, e = c.start or obj.start, c.end or obj.end
                 d = max(1, ceil((e - s).total_seconds() / 86400))
             days[c.room_id] = max(days.get(c.room_id, 0), d)
-            prices[c.room_id] = (c.room.day_rest_price or c.room.price) if day_rest and c.room else (
-                c.room.price if c.room else Decimal(0))
+            prices[c.room_id] = c.rate if c.rate is not None else (
+                listed(c.room) if c.room else Decimal(0))
         rooms_total = sum(prices.get(rid, Decimal(0)) * n for rid, n in days.items())
         # Extra packages bill on top of the rooms — the snapshot price on each row.
         return str(rooms_total + sum(p.amount for p in obj.extra_packages.all()))
@@ -860,6 +870,11 @@ class BookingSerializer(serializers.ModelSerializer):
     def validate_deposit(self, value):
         if value is not None and value < 0:
             raise serializers.ValidationError("The deposit can't be negative.")
+        return value
+
+    def validate_rate(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError("The room rate can't be negative.")
         return value
 
     def validate_tax_reference(self, value):
@@ -1064,7 +1079,7 @@ class BookingSerializer(serializers.ModelSerializer):
                 if c.get("room"):
                     people.append(Booking.objects.create(
                         branch=booking.branch, kind=booking.kind, status=booking.status,
-                        room=c["room"],
+                        room=c["room"], rate=c.get("rate"),
                         start=c.get("start") or booking.start,
                         end=c.get("end") or booking.end,
                         guest_name=c["name"], guest_phone=c.get("phone", ""), guest_email=c.get("email", ""),

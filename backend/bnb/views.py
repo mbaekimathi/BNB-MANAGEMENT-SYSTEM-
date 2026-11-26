@@ -408,7 +408,10 @@ class BookingViewSet(
             if nights_left < 1:
                 raise serializers.ValidationError({"detail": "This stay has ended — there's nothing left to change."})
 
-            credit = nights_left * booking.room.price
+            # The credit is what the guest was actually billed for the unused
+            # nights — their agreed rate when the desk settled one, the room's
+            # listed price otherwise.
+            credit = nights_left * (booking.rate if booking.rate is not None else booking.room.price)
             cost = nights_left * room.price
             diff = credit - cost  # + money owed back to the guest · − shortfall to collect
             option = vd["option"]
@@ -495,7 +498,10 @@ class BookingViewSet(
                 )
             booking.room = room
             booking.end = new_end
-            booking.save(update_fields=["room", "end", "updated_at"])
+            # The agreed rate was settled for the room they left — the new room
+            # bills its listed price unless the desk agrees another.
+            booking.rate = None
+            booking.save(update_fields=["room", "end", "rate", "updated_at"])
 
         _clear_prefetch(booking)
         applied = {
@@ -560,7 +566,7 @@ class BookingViewSet(
                     raise serializers.ValidationError(
                         {"extend_nights": f"{booking.room.name} is already {other.status} after the current checkout ({other.guest_name})."}
                     )
-                cost = extra * booking.room.price
+                cost = extra * (booking.rate if booking.rate is not None else booking.room.price)
                 booking.end = new_end
                 booking.save(update_fields=["end", "updated_at"])
 

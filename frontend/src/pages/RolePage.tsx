@@ -43,7 +43,7 @@ const REGISTER_MODES: Record<string, RegisterMode> = { '': 'reserve', 'check-in'
 /** Where the register form returns to after a booking, per mode. */
 const REGISTER_DONE: Record<RegisterMode, [dest: string, label: string]> = {
   reserve: ['guests-in-house', 'Back to guests in house'],
-  stay: ['guests-in-house', 'Back to guests in house'],
+  stay: ['guests-in-house/in-house', 'Back to guests in house'],
   dayrest: ['guests-in-house', 'Back to guests in house'],
 }
 
@@ -830,7 +830,7 @@ export default function RolePage() {
   else if (module?.slug === 'check-in') content = <CheckInPage item={active} t={workspace.theme} />
   else if (recep?.slug === 'register-client') {
     const [dest, doneLabel] = REGISTER_DONE[registerMode]
-    content = <RegisterClientPage key={active.slug} item={active} t={workspace.theme} me={user} mode={registerMode} back={`${basePath}/${dest}`} doneLabel={doneLabel} />
+    content = <RegisterClientPage key={active.slug} item={active} t={workspace.theme} me={user} mode={registerMode} back={`${basePath}/${dest}`} again={`${basePath}/register-client/check-in`} doneLabel={doneLabel} />
   } else if (recep?.slug === 'guests-in-house')
     content =
       active.slug === 'reservations' ? (

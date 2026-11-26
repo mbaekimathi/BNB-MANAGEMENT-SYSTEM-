@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { AlarmClock, ArrowUpRight, Ban, BedDouble, Building2, CalendarCheck, CalendarClock, Clock, Globe, Hourglass, IdCard, LogIn, LogOut, Mail, MessageSquare, Phone, Receipt, RefreshCw, Search, Users, Wallet } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Button, Empty, ErrorNote, Flash, LinkButton, Loading, PageHeader, Panel, Pill, Stat, type Tone } from '../components/hr/ui'
+import { Button, Empty, ErrorNote, Flash, LinkButton, Loading, PageHeader, Panel, Pill, Select, Stat, type Tone } from '../components/hr/ui'
 import { parseApiError, type Employee } from '../lib/api'
 import { bnb, clientKey, stayLength, type Booking } from '../lib/bnb'
 import { clientPath, rolePath } from '../lib/roles'
@@ -176,14 +176,15 @@ function BoardCount({ t, n, dot }: { t: WorkspaceTheme; n: number; dot: string }
   )
 }
 
+/** The payment bucket a booking falls in — 'paid' | 'partial' | 'unpaid'.
+ *  Shared by the badge below and the board's payment filter. */
+const payState = (b: Booking) =>
+  Math.max(0, Number(b.balance)) <= 0 ? 'paid' : Number(b.paid) > 0 ? 'partial' : 'unpaid'
+
 /** Payment state for a booking row — Paid / Partial / Not paid, plus the balance owed. */
 export function PayState({ t, b }: { t: WorkspaceTheme; b: Booking }) {
   const balance = Math.max(0, Number(b.balance))
-  const state: { tone: Tone; text: string } = balance <= 0
-    ? { tone: 'green', text: 'Paid' }
-    : Number(b.paid) > 0
-      ? { tone: 'amber', text: 'Partial' }
-      : { tone: 'red', text: 'Not paid' }
+  const state = ({ paid: { tone: 'green', text: 'Paid' }, partial: { tone: 'amber', text: 'Partial' }, unpaid: { tone: 'red', text: 'Not paid' } } as const)[payState(b)]
   return (
     <div className="flex flex-col items-start gap-1">
       <Pill tone={state.tone}><Wallet className="mr-1 inline size-3" />{state.text}</Pill>
@@ -284,6 +285,22 @@ const TXN_TONE: Record<string, Tone> = { 'In house': 'blue', Reserved: 'amber', 
 /** Board label for a live transaction — in-house stays, reservations, day rests. */
 const txnType = (b: Booking) => (b.kind === 'day_rest' ? 'Day rest' : b.status === 'reserved' ? 'Reserved' : 'In house')
 
+/** Payment filter picks — '' shows everything, the rest match `payState`. */
+const PAY_FILTERS = [
+  { value: '', label: 'All payments' },
+  { value: 'paid', label: 'Paid' },
+  { value: 'partial', label: 'Partial' },
+  { value: 'unpaid', label: 'Not paid' },
+]
+
+/** Room-status filter picks — '' shows everything, the rest match `txnType`. */
+const ROOM_FILTERS = [
+  { value: '', label: 'All statuses' },
+  { value: 'In house', label: 'In house' },
+  { value: 'Reserved', label: 'Reserved' },
+  { value: 'Day rest', label: 'Day rest' },
+]
+
 /** When the booking next needs attention: arrival for reservations, checkout for stays. */
 function txnTiming(b: Booking, now: number): { text: string; tone: Tone } {
   const u = splitLeft(b.status === 'reserved' ? b.start : b.end, now)
@@ -325,6 +342,8 @@ export function BoardLinks({ t, base, active }: { t: WorkspaceTheme; base: strin
 export function AllTransactionsPage({ item, t, me }: { item: NavItem; t: WorkspaceTheme; me: Employee }) {
   const { data, error, loading, reload, setData } = useApi(() => bnb.bookings({ limit: 500 }))
   const [q, setQ] = useState('')
+  const [pay, setPay] = useState('')
+  const [room, setRoom] = useState('')
   const [busy, setBusy] = useState(0)
   const [flash, setFlash] = useState({ text: '', bad: false })
   const now = useNow(30_000).getTime()
@@ -337,7 +356,7 @@ export function AllTransactionsPage({ item, t, me }: { item: NavItem; t: Workspa
       .sort((a, b) => rank(a) - rank(b) || a.end.localeCompare(b.end))
   }, [data])
   const match = (b: Booking) => !q || `${b.guest_name} ${b.room_name} ${b.guest_phone} ${b.guest_email} ${b.guest_id_number} ${(b.companions ?? []).map((c) => `${c.name} ${c.id_number} ${c.phone} ${c.email}`).join(' ')}`.toLowerCase().includes(q.toLowerCase())
-  const list = txns.filter(match)
+  const list = txns.filter(match).filter((b) => (!pay || payState(b) === pay) && (!room || txnType(b) === room))
   const count = (label: string) => txns.filter((b) => txnType(b) === label).length
   const th = `px-3 py-2.5 text-left text-[11px] font-medium uppercase tracking-wider ${t.muted}`
 
@@ -379,8 +398,8 @@ export function AllTransactionsPage({ item, t, me }: { item: NavItem; t: Workspa
             <Stat t={t} i={3} icon={Receipt} label="Transactions" value={data ? txns.length : '—'} />
           </div>
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="relative sm:max-w-xs sm:flex-1">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="relative sm:max-w-xs sm:flex-1 sm:self-center">
               <Search className={`pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 ${t.muted}`} />
               <input
                 value={q}
@@ -389,9 +408,21 @@ export function AllTransactionsPage({ item, t, me }: { item: NavItem; t: Workspa
                 className={`h-10 w-full bg-transparent pl-9 pr-3 text-sm outline-none focus:ring-2 ${t.radius} ${t.chip} ${t.ring}`}
               />
             </div>
-            <Button t={t} variant="ghost" onClick={reload} className="sm:ml-auto">
-              <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
-            </Button>
+            <div className="flex flex-wrap items-end gap-2 sm:ml-auto">
+              <div className="w-36">
+                <Select t={t} label="Payment" value={pay} onChange={(e) => setPay(e.target.value)}>
+                  {PAY_FILTERS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                </Select>
+              </div>
+              <div className="w-36">
+                <Select t={t} label="Room status" value={room} onChange={(e) => setRoom(e.target.value)}>
+                  {ROOM_FILTERS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                </Select>
+              </div>
+              <Button t={t} variant="ghost" onClick={reload}>
+                <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
+              </Button>
+            </div>
           </div>
 
           <Flash message={flash.text} tone={flash.bad ? 'red' : 'green'} />
@@ -406,8 +437,8 @@ export function AllTransactionsPage({ item, t, me }: { item: NavItem; t: Workspa
                 <Empty
                   t={t}
                   icon={Receipt}
-                  title={txns.length ? 'No transactions match your search' : 'No live transactions'}
-                  text={txns.length ? 'Try a different search.' : 'In-house guests, upcoming reservations and live day rests appear here.'}
+                  title={txns.length ? 'No transactions match your filters' : 'No live transactions'}
+                  text={txns.length ? 'Try a different search or filter.' : 'In-house guests, upcoming reservations and live day rests appear here.'}
                 />
               ) : (
                 <>

@@ -230,7 +230,7 @@ export default function ReservationsPage({ item, t, me }: { item: NavItem; t: Wo
 }
 
 /** Sidebar page for registering a client — the form lives in the page, not a dialog. */
-export function RegisterClientPage({ item, t, me, back, mode = 'reserve', doneLabel = 'Back to reservations' }: { item: NavItem; t: WorkspaceTheme; me: Employee; back: string; mode?: RegisterMode; doneLabel?: string }) {
+export function RegisterClientPage({ item, t, me, back, again, mode = 'reserve', doneLabel = 'Back to reservations' }: { item: NavItem; t: WorkspaceTheme; me: Employee; back: string; again?: string; mode?: RegisterMode; doneLabel?: string }) {
   // Newest 500 covers every live booking plus plenty of client-directory history.
   const { data, reload } = useApi(() => bnb.bookings({ limit: 500 }))
   const rooms = useApi(bnb.rooms)
@@ -263,7 +263,7 @@ export function RegisterClientPage({ item, t, me, back, mode = 'reserve', doneLa
         <Panel t={t}><ErrorNote t={t} message={tills.error} onRetry={tills.reload} /></Panel>
       ) : (
         <RegisterForm t={t} rooms={rooms.data ?? []} bookings={live} clients={clients} packages={(pkgs.data ?? []).filter((x) => x.status === 'active')}
-          onDone={() => navigate(back)} initialMode={mode} doneLabel={doneLabel} reloadBookings={reload}
+          onDone={(a) => navigate(a && again ? again : back)} initialMode={mode} doneLabel={doneLabel} reloadBookings={reload}
           tillOpen={!!open} tillMine={mine} tillOwner={open?.opened_by_name} />
       )}
     </div>
@@ -602,7 +602,7 @@ const blank = {
   guest_nationality: 'Kenya', guest_notes: '',
   ref_name: '', ref_phone: '',
   guests: '1', room: '',
-  start: localDT(new Date()), days: '2', hours: '3',
+  start: localDT(new Date()), days: '1', hours: '3',
 }
 
 /** A known client distilled from past bookings — powers the live phone/name suggestions. */
@@ -691,7 +691,7 @@ const emptyCompanion = (): Companion => ({
 
 /** One payment row's editable fields on the payment card — an untouched field
  *  falls back to the room-holder's full charge paid in cash. */
-type PayEdit = { amount?: string; method?: PaymentMethod | ''; reference?: string; paid_at?: string }
+type PayEdit = { amount?: string; method?: PaymentMethod | ''; reference?: string; paid_at?: string; rate?: string }
 
 /** Wizard card transition — the card flips around its vertical axis, the direction
  *  following the navigation (next tips it left, back tips it right). */
@@ -739,7 +739,7 @@ function Area({ t, label, error, ...props }: { t: WorkspaceTheme; label?: string
 
 export type RegisterMode = 'reserve' | 'stay' | 'dayrest'
 
-function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMode = 'reserve', doneLabel = 'Back to reservations', reloadBookings, tillOpen = true, tillMine = true, tillOwner }: { t: WorkspaceTheme; rooms: Room[]; bookings: Booking[]; clients: GuestRef[]; packages: ExtraPackage[]; onDone: () => void; initialMode?: RegisterMode; doneLabel?: string; reloadBookings?: () => void; tillOpen?: boolean; tillMine?: boolean; tillOwner?: string | null }) {
+function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMode = 'reserve', doneLabel = 'Back to reservations', reloadBookings, tillOpen = true, tillMine = true, tillOwner }: { t: WorkspaceTheme; rooms: Room[]; bookings: Booking[]; clients: GuestRef[]; packages: ExtraPackage[]; onDone: (again?: boolean) => void; initialMode?: RegisterMode; doneLabel?: string; reloadBookings?: () => void; tillOpen?: boolean; tillMine?: boolean; tillOwner?: string | null }) {
   const [mode, setMode] = useState<RegisterMode>(initialMode)
   const [form, setForm] = useState(() => ({ ...blank, start: localDT(new Date()) }))
   const [more, setMore] = useState(false)
@@ -922,9 +922,18 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
     return [...seen.entries()].map(([value, label]) => ({ value, label }))
   }, [rooms])
 
-  /** A room's charge for `d` nights — a day rest bills its flat rate whatever
-   *  the hours (the room's day-rest rate when set, the nightly rate otherwise). */
-  const charge = (r: Room, d: number) => (dayRest ? Number(r.day_rest_price ?? r.price) : Number(r.price) * d)
+  /** A room's listed rate — a stay's nightly rate; a day rest's flat charge
+   *  (the room's own day-rest rate when set, the nightly rate otherwise). */
+  const listRate = (r: Room) => (dayRest ? Number(r.day_rest_price ?? r.price) : Number(r.price))
+  /** A room-holder's agreed rate — the receptionist can settle a different one
+   *  at the desk; an untouched row bills the room's listed price. */
+  const rateFor = (gi: number, r: Room) => {
+    const v = payEdits[gi]?.rate
+    return v !== undefined && v.trim() !== '' ? Number(v) : listRate(r)
+  }
+  /** A room's charge on the bill — the agreed rate for a stay's nights, or the
+   *  flat rate for a day rest whatever the hours. */
+  const charge = (p: { gi: number; room: Room; d: number }) => rateFor(p.gi, p.room) * (dayRest ? 1 : p.d)
 
   // Every room-holder is their own client with their own bill — the payment card
   // collects one row per held room. Party position: 0 = main guest, n = companion n-1.
@@ -949,7 +958,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
       return { ...m, [gi]: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] }
     })
   /** A room-holder's full charge — their room plus their picked packages. */
-  const dueFor = (p: { gi: number; room: Room; d: number }) => charge(p.room, p.d) + pkgTotal(p.gi)
+  const dueFor = (p: { gi: number; room: Room; d: number }) => charge(p) + pkgTotal(p.gi)
   const billTotal = payers.reduce((n, p) => n + dueFor(p), 0)
 
   // The payment clock — 'now' refreshed once a minute for untouched time-paid fields.
@@ -975,6 +984,9 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
   // is named without a usable method (or code), or the amount isn't a number.
   const payRowOk = (gi: number, due: number) => {
     const r = payRow(gi, due)
+    // A settled rate only needs to be a usable number — 0 comps the room.
+    const rt = payEdits[gi]?.rate?.trim()
+    if (rt !== undefined && rt !== '' && !(Number(rt) >= 0)) return false
     // Pay-later marks the whole balance due — nothing else on the row matters.
     if (r.method === 'later') return true
     const amt = r.amount.trim()
@@ -1004,8 +1016,19 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
     mode !== 'reserve' && !payOk && 'the payment details',
   ].filter(Boolean)
 
+  /** The rate a payment row carries into the booking — only when the desk
+   *  settled a different one; untouched rows bill the room's listed price. */
+  const rateSent = (gi: number) => {
+    const v = payEdits[gi]?.rate?.trim()
+    return v ? Number(v) : null
+  }
+
   async function save(e: FormEvent) {
     e.preventDefault()
+    // The last card can submit two ways — 'done' closes out to the guests list,
+    // 'again' wipes the wizard so the next client registers straight away.
+    const submitter = (e.nativeEvent as SubmitEvent).submitter
+    const again = submitter instanceof HTMLButtonElement && submitter.value === 'again'
     if (!start || !end) { go(2); return setErrors({ start: 'Pick the move-in date and time.' }) }
     if (!chosen) { go(2); return setErrors({ room: 'Choose a room to continue.' }) }
     if (!usable(chosen)) { go(2); return setErrors({ room: `${chosen.name} isn't free for that period — pick another.` }) }
@@ -1032,7 +1055,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
         guest_id_number: form.guest_id_number.trim(),
         guest_nationality: form.guest_nationality.trim(),
         guest_notes: form.guest_notes.trim(),
-        companions: companions.map((c) => {
+        companions: companions.map((c, i) => {
           const own = c.room && c.ownDates && c.start ? cDates(c) : null
           return {
             name: c.name.trim(),
@@ -1045,6 +1068,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
             room: c.room ? Number(c.room) : null,
             start: own?.s ? own.s.toISOString() : null,
             end: own?.e ? own.e.toISOString() : null,
+            rate: rateSent(i + 1),
           }
         }),
         referrer_name: form.ref_name.trim(),
@@ -1058,6 +1082,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
         start: start.toISOString(),
         end: end.toISOString(),
         tax_reference: taxRef.trim(),
+        rate: rateSent(0),
         // Reservations hold a deposit; check-ins and day rests send the collected
         // payments — one per room-holder so each guest's own bill is settled.
         ...(mode === 'reserve'
@@ -1078,7 +1103,28 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
                 .filter((p) => p.amount > 0 || p.method === 'later'),
             }),
       })
-      onDone()
+      if (again) {
+        // Check in + register another — wipe the wizard for the next client.
+        setForm({ ...blank, start: localDT(new Date()) })
+        setCompanions([])
+        setPayEdits({})
+        setPicked({})
+        setPkgOpen({})
+        setDepositAmt('')
+        setTaxRef('')
+        setTaxOpen(false)
+        setMore(false)
+        setRoomType('')
+        setRoomQ('')
+        setEditing(null)
+        setRefOpen(false)
+        setSuggest(null)
+        setMode(initialMode)
+        setCard(0)
+        setDir(1)
+        reloadBookings?.()
+      }
+      onDone(again)
     } catch (err) {
       const { message, fields } = parseApiError(err)
       setErrors(fields)
@@ -1633,7 +1679,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
                   {p.room.name} · {spanText(p.s, p.e, p.d)}
                 </span>
               </span>
-              <span className="shrink-0 text-xs font-semibold tabular-nums">{formatMoney(charge(p.room, p.d))}</span>
+              <span className="shrink-0 text-xs font-semibold tabular-nums">{formatMoney(charge(p))}</span>
             </div>
             {pkgPicks(p.gi).map((x) => (
               <div key={x.id} className={`flex items-center gap-3 border-t px-3 py-2 ${t.sidebarDivider}`}>
@@ -1787,6 +1833,12 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
                       {CHECKIN_METHODS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </Select>
                     <Input
+                      t={t} label={dayRest ? 'House charge' : 'House rate / night'} type="number" min={0} step="0.01"
+                      value={payEdits[p.gi]?.rate ?? String(listRate(p.room))}
+                      onChange={(e) => { setPay(p.gi, 'rate', e.target.value); clearErr(`p${p.gi}rate`) }}
+                      error={errors[`p${p.gi}rate`]}
+                    />
+                    <Input
                       t={t} label="Amount received" type="number" min={0} step="0.01"
                       value={row.amount} onChange={(e) => { setPay(p.gi, 'amount', e.target.value); clearErr(`p${p.gi}amount`) }}
                       error={errors[`p${p.gi}amount`]} disabled={row.method === 'later'}
@@ -1862,7 +1914,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
         ? /^(guest_|guests$|referrer_|companions$)/.test(k) || /^c\d+(name|phone|email)$/.test(k)
         : i === 2
           ? /^(room|start|end|days|hours|companions$)/.test(k) || /^c\d+room$/.test(k)
-          : /^(deposit|payments?|packages|detail|tax_reference)$/.test(k) || /^p\d+(amount|method|reference|paid_at)$/.test(k)
+          : /^(deposit|payments?|packages|detail|tax_reference)$/.test(k) || /^p\d+(amount|method|reference|paid_at|rate)$/.test(k)
 
   /** Per-card gate — Next only advances when the current card passes its checks. */
   const cardOk = (i: number) => {
@@ -1907,6 +1959,9 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
         for (const p of payers) {
           const due = dueFor(p)
           const row = payRow(p.gi, due)
+          // A settled rate of 0 comps the room — anything below a number is wrong.
+          const rt = payEdits[p.gi]?.rate?.trim()
+          if (rt !== undefined && rt !== '' && !(Number(rt) >= 0)) errs[`p${p.gi}rate`] = 'Enter a valid rate.'
           if (row.method === 'later') continue
           const amt = row.amount.trim()
           if (!amt) continue
@@ -2021,7 +2076,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
 
       <div className="mt-4 flex items-center gap-2">
         {cur === 0 ? (
-          <Button t={t} variant="ghost" onClick={onDone}>{doneLabel}</Button>
+          <Button t={t} variant="ghost" onClick={() => onDone()}>{doneLabel}</Button>
         ) : (
           <Button t={t} variant="ghost" onClick={() => go(cur - 1)}><ArrowLeft className="size-3.5" /> Back</Button>
         )}
@@ -2031,9 +2086,18 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
           )}
           {cur < lastCard ? (
             <Button t={t} onClick={() => go(cur + 1)}>Next <ArrowRight className="size-3.5" /></Button>
+          ) : mode === 'stay' ? (
+            <>
+              <Button t={t} type="submit" variant="ghost" name="after" value="again" busy={saving}>
+                <Plus className="size-4" /> Check in + register new client
+              </Button>
+              <Button t={t} type="submit" name="after" value="done" busy={saving}>
+                <LogIn className="size-4" /> Check in guest
+              </Button>
+            </>
           ) : (
             <Button t={t} type="submit" busy={saving}>
-              {mode === 'reserve' ? <><CalendarCheck className="size-4" /> Reserve room</> : dayRest ? <><Hourglass className="size-4" /> Book day rest</> : <><LogIn className="size-4" /> Check in guest</>}
+              {mode === 'reserve' ? <><CalendarCheck className="size-4" /> Reserve room</> : <><Hourglass className="size-4" /> Book day rest</>}
             </Button>
           )}
         </span>

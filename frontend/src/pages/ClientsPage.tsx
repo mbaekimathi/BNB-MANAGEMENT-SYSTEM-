@@ -347,6 +347,7 @@ function ClientPortal({ t, c, base, charge, th, rooms, me, onChanged }: { t: Wor
   const [busy, setBusy] = useState(0)
   const [moving, setMoving] = useState<{ b: Booking; dir?: 'up' | 'down' } | null>(null)
   const [paying, setPaying] = useState<Booking | null>(null)
+  const [billing, setBilling] = useState<Booking | null>(null)
   const [adding, setAdding] = useState<Booking | null>(null)
   const [cancelling, setCancelling] = useState<Booking | null>(null)
   const [pkgMenu, setPkgMenu] = useState(false)
@@ -480,6 +481,7 @@ function ClientPortal({ t, c, base, charge, th, rooms, me, onChanged }: { t: Wor
           <CurrentStrip
             t={t} b={current} nightsLeft={nightsLeft} busy={busy === current.id} id="cp-current"
             onPackage={() => setPkgMenu(true)}
+            onEditBill={() => setBilling(current)}
             onMove={() => setMoving({ b: current })}
             onAdd={() => setAdding(current)}
             onPay={() => setPaying(current)}
@@ -513,6 +515,7 @@ function ClientPortal({ t, c, base, charge, th, rooms, me, onChanged }: { t: Wor
       <Panel t={t} title="Stay history" actions={<Pill tone="blue">{bookings?.length ?? c.bookings}</Pill>}>
         <HistoryBody
           t={t} bookings={bookings} loading={loading && !bookings} th={th} charge={charge} busy={busy}
+          onEditBill={setBilling}
           onMove={(b) => setMoving({ b })}
           onAdd={setAdding}
           onPay={setPaying}
@@ -535,6 +538,7 @@ function ClientPortal({ t, c, base, charge, th, rooms, me, onChanged }: { t: Wor
               <CurrentStrip
                 t={t} b={current} nightsLeft={nightsLeft} busy={busy === current.id}
                 onPackage={() => { closeSheet(); setPkgMenu(true) }}
+                onEditBill={() => setBilling(current)}
                 onMove={() => setMoving({ b: current })}
                 onAdd={() => setAdding(current)}
                 onPay={() => setPaying(current)}
@@ -580,6 +584,7 @@ function ClientPortal({ t, c, base, charge, th, rooms, me, onChanged }: { t: Wor
           <PortalSheet t={t} icon={History} title="Stay history" sub={`${c.name} · ${bookings?.length ?? c.bookings} bookings`} wide onClose={closeSheet}>
             <HistoryBody
               t={t} bookings={bookings} loading={loading && !bookings} th={th} charge={charge} busy={busy}
+              onEditBill={setBilling}
               onMove={(b) => setMoving({ b })}
               onAdd={setAdding}
               onPay={setPaying}
@@ -629,6 +634,18 @@ function ClientPortal({ t, c, base, charge, th, rooms, me, onChanged }: { t: Wor
               setData((l) => l?.map((x) => (x.id === next.id ? next : x)) ?? null)
               setPaying(null)
               setFlash({ text: payText(paying, applied, next), bad: false })
+              onChanged?.()
+            }}
+          />
+        )}
+        {billing && (
+          <EditBill
+            t={t} b={billing} rooms={rooms}
+            onClose={() => setBilling(null)}
+            onDone={(next) => {
+              setData((l) => l?.map((x) => (x.id === next.id ? next : x)) ?? null)
+              setBilling(null)
+              setFlash({ text: `${next.guest_name}'s bill updated — now ${formatMoney(next.bill)}.`, bad: false })
               onChanged?.()
             }}
           />
@@ -791,13 +808,14 @@ function ProfileMeta({ t, c }: { t: WorkspaceTheme; c: ClientRow }) {
 
 /** The current/next stay as a clickable money strip — its click opens the
  *  package options popup. Lives on the profile card and in its own sheet. */
-function CurrentStrip({ t, b, nightsLeft, busy, id, onPackage, onMove, onAdd, onPay, onCheckout, onCancel }: {
+function CurrentStrip({ t, b, nightsLeft, busy, id, onPackage, onEditBill, onMove, onAdd, onPay, onCheckout, onCancel }: {
   t: WorkspaceTheme
   b: Booking
   nightsLeft: number
   busy: boolean
   id?: string
   onPackage: () => void
+  onEditBill: () => void
   onMove: () => void
   onAdd: () => void
   onPay: () => void
@@ -837,7 +855,16 @@ function CurrentStrip({ t, b, nightsLeft, busy, id, onPackage, onMove, onAdd, on
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
         <div className="text-xs">
           <p className={t.muted}>Billed</p>
-          <p className="mt-0.5 text-base font-semibold tabular-nums">{formatMoney(b.bill)}</p>
+          <p className="mt-0.5 flex items-center gap-1 text-base font-semibold tabular-nums">
+            {formatMoney(b.bill)}
+            <button
+              type="button" onClick={(e) => { e.stopPropagation(); onEditBill() }}
+              title="Edit the billing price" aria-label="Edit the billing price"
+              className={`grid size-5 place-items-center ${t.radius} ${t.iconButton}`}
+            >
+              <Pencil className="size-3" />
+            </button>
+          </p>
         </div>
         <div className="text-xs">
           <p className={t.muted}>Paid</p>
@@ -946,13 +973,14 @@ function TxnsBody({ t, txns, loading, th }: {
 
 /** Every booking the client has made at the branch, with per-stay actions.
  *  The same table fills the panel and the stay-history sheet. */
-function HistoryBody({ t, bookings, loading, th, charge, busy, onMove, onAdd, onPay, onCheckout, onCancel }: {
+function HistoryBody({ t, bookings, loading, th, charge, busy, onEditBill, onMove, onAdd, onPay, onCheckout, onCancel }: {
   t: WorkspaceTheme
   bookings: Booking[] | null
   loading: boolean
   th: string
   charge: (b: Booking) => number
   busy: number
+  onEditBill: (b: Booking) => void
   onMove: (b: Booking) => void
   onAdd: (b: Booking) => void
   onPay: (b: Booking) => void
@@ -1001,7 +1029,18 @@ function HistoryBody({ t, bookings, loading, th, charge, busy, onMove, onAdd, on
                   )}
                 </td>
                 <td className="whitespace-nowrap px-3 py-3 text-right text-xs font-medium">
-                  {b.status === 'cancelled' ? '—' : formatMoney(charge(b))}
+                  {b.status === 'cancelled' ? '—' : (
+                    <span className="inline-flex items-center justify-end gap-1">
+                      {formatMoney(charge(b))}
+                      <button
+                        type="button" onClick={() => onEditBill(b)}
+                        title={`Edit booking #${b.id}'s billing price`} aria-label={`Edit booking #${b.id}'s billing price`}
+                        className={`grid size-5 place-items-center ${t.radius} ${t.iconButton}`}
+                      >
+                        <Pencil className="size-3" />
+                      </button>
+                    </span>
+                  )}
                 </td>
                 <td className="whitespace-nowrap px-3 py-3 text-right text-xs font-medium">{paid ? formatMoney(paid) : '—'}</td>
                 <td className="px-3 py-3 text-right">
@@ -2241,6 +2280,134 @@ function AddPackage({ t, b, me, onClose, onDone }: {
           <Button t={t} variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
           <Button t={t} busy={busy} disabled={!ok} onClick={() => void confirm()}>
             <PackagePlus className="size-4" /> {payNow && pkg ? `Add & collect ${formatMoney(pkg.amount)}` : 'Add to bill'}
+          </Button>
+        </footer>
+      </motion.div>
+    </motion.div>
+  )
+}
+
+/** Re-price a booking — the pen beside a Billed figure opens this. The typed
+ *  total rewrites the room's agreed rate (nightly for a stay, the flat house
+ *  charge for a day rest); extras already on the bill stay on top. Landing the
+ *  total on the room's listed price clears the override instead of pinning it. */
+function EditBill({ t, b, rooms, onClose, onDone }: {
+  t: WorkspaceTheme
+  b: Booking
+  rooms: Room[]
+  onClose: () => void
+  onDone: (next: Booking) => void
+}) {
+  const dayRest = b.kind === 'day_rest'
+  const days = dayRest ? 1 : b.nights
+  const room = rooms.find((r) => r.id === b.room)
+  const listed = room ? Number(dayRest ? (room.day_rest_price ?? room.price) : room.price) : null
+  // The bill is rooms + extras — extras are extra packages (snapshot when sold)
+  // plus any companion rooms. When the main room's effective rate is known the
+  // extras are exact; without it the packages sum is the floor.
+  const effRate = b.rate != null ? Number(b.rate) : listed
+  const extras = effRate != null
+    ? Number(b.bill) - effRate * days
+    : (b.packages ?? []).reduce((n, p) => n + Number(p.amount), 0)
+  const [total, setTotal] = useState(String(Number(b.bill)))
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !busy && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [busy, onClose])
+
+  const target = total.trim() === '' ? NaN : Number(total)
+  // The rate the total implies — the server keeps two decimals on the rate, so
+  // odd totals can land the bill a cent off what was typed; the preview says so.
+  const rawRate = (target - extras) / days
+  const rate = Number.isFinite(rawRate) ? Math.round(rawRate * 100) / 100 : NaN
+  const valid = Number.isFinite(target) && target >= 0 && rawRate >= 0
+  const nextBill = valid ? rate * days + extras : NaN
+  const ok = valid && Math.abs(nextBill - Number(b.bill)) > 0.005
+
+  async function confirm() {
+    if (!ok) return
+    setBusy(true)
+    setErr('')
+    try {
+      const next = await bnb.updateBooking(b.id, { rate: listed != null && rate === listed ? null : rate })
+      onDone(next)
+    } catch (e) {
+      setErr(parseApiError(e).message)
+      setBusy(false)
+    }
+  }
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-[60] grid place-items-center overflow-y-auto p-4"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+    >
+      <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" />
+      <motion.div
+        role="dialog" aria-modal="true" aria-label={`Edit the billing price for ${b.guest_name}`}
+        initial={{ scale: 0.94, y: 12 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.96, y: 8 }}
+        transition={{ type: 'spring', stiffness: 340, damping: 30 }}
+        className={`relative my-auto flex max-h-[calc(100vh-2rem)] w-full max-w-md flex-col overflow-hidden shadow-2xl ${t.radius} ${t.root}`}
+      >
+        <header className="flex items-center justify-between gap-3 border-b border-slate-900/10 px-5 py-4 dark:border-white/10">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className={`grid size-10 shrink-0 place-items-center ${t.radius} ${t.iconBox}`}>
+              <Pencil className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <h3 className={`truncate text-base ${t.heading}`}>Edit billing</h3>
+              <p className={`text-xs ${t.muted}`}>{b.guest_name} · booking #{b.id}</p>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className={`grid size-9 shrink-0 place-items-center ${t.radius} ${t.iconButton}`}>
+            <X className="size-4" />
+          </button>
+        </header>
+
+        <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
+          {/* The stay and where the money stands. */}
+          <div className={`grid gap-1 px-3 py-2.5 text-xs ${t.radius} ${t.chip}`}>
+            <p className="flex justify-between"><span className={t.muted}>{b.room_name} · {fmtD(b.start)} → {fmtD(b.end)}</span><span className={t.muted}>{stayLength(b)}</span></p>
+            <p className="flex justify-between"><span className={t.muted}>Billed now</span><b>{formatMoney(b.bill)}</b></p>
+            <p className="flex justify-between"><span className={t.muted}>Paid so far</span><b>{formatMoney(b.paid)}</b></p>
+          </div>
+
+          <Input
+            t={t} label="New billing total" type="number" min={0} step="0.01" required
+            value={total} onChange={(e) => { setTotal(e.target.value); setErr('') }}
+          />
+
+          {valid ? (
+            <div className={`grid gap-1 px-3 py-2.5 text-xs ${t.radius} ${t.chip}`}>
+              <p className="flex justify-between">
+                <span className={t.muted}>
+                  {dayRest ? `House charge ${formatMoney(rate)}` : `${days} ${days === 1 ? 'night' : 'nights'} × ${formatMoney(rate)}`}
+                  {extras > 0 ? ` + extras ${formatMoney(extras)}` : ''}
+                </span>
+                <b>{formatMoney(nextBill)}</b>
+              </p>
+              {listed != null && rate !== listed && (
+                <p className={t.muted}>{b.room_name} lists at {formatMoney(listed)}{dayRest ? '' : ' / night'} — a total of {formatMoney(listed * days + extras)} reverts to it.</p>
+              )}
+            </div>
+          ) : (
+            <p className={`px-3 py-2.5 text-xs text-rose-500 ${t.radius} ${t.chip}`}>
+              {Number.isFinite(target) && target < extras
+                ? `The bill can't go below the extras already on it (${formatMoney(extras)}).`
+                : 'Enter the new billing total.'}
+            </p>
+          )}
+          {err && <p className={`px-3 py-2.5 text-xs text-rose-500 ${t.radius} ${t.chip}`}>{err}</p>}
+        </div>
+
+        <footer className="flex justify-end gap-2 border-t border-slate-900/10 px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] dark:border-white/10">
+          <Button t={t} variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button t={t} busy={busy} disabled={!ok} onClick={() => void confirm()}>
+            <Check className="size-4" /> Save billing
           </Button>
         </footer>
       </motion.div>

@@ -172,6 +172,8 @@ export interface BookingGuest {
   room_name: string | null
   start: string | null
   end: string | null
+  /** This guest's agreed room rate — null bills the room's listed price. */
+  rate: string | null
 }
 
 /** `later` is not a money channel — a zero-amount marker meaning the guest
@@ -291,6 +293,9 @@ export interface Booking {
   deposit: string | null
   /** Tax invoice / reference code recorded at the desk — optional. */
   tax_reference: string
+  /** The agreed room rate — a stay's nightly rate, a day rest's flat charge.
+   *  null means the room bills its listed price. */
+  rate: string | null
   /** Estimated charge — every booked room × its billed nights (day rest = flat)
    *  plus any extra packages sold on the booking. */
   bill: string
@@ -384,6 +389,12 @@ export interface PayResult {
   }
 }
 
+/** Direct field edits on a booking — today that's the agreed `rate` behind the
+ *  bill; null reverts the room to its listed price. */
+export interface BookingEdit {
+  rate?: number | null
+}
+
 /** Sell an extra package on a live booking — `method` collects the price in the same call. */
 export interface AddPackageRequest {
   package: number
@@ -413,7 +424,7 @@ export interface BookingRegister {
   guest_id_number?: string
   guest_nationality?: string
   guest_notes?: string
-  companions?: Omit<BookingGuest, 'id' | 'id_type_label' | 'room_name'>[]
+  companions?: (Omit<BookingGuest, 'id' | 'id_type_label' | 'room_name' | 'rate'> & { rate?: number | null })[]
   payments?: BookingPaymentRegister[]
   /** Extra packages picked per guest — same party-position key as payments. */
   packages?: BookingPackageRegister[]
@@ -427,6 +438,9 @@ export interface BookingRegister {
   deposit?: number | null
   /** Tax invoice / reference code for the bill — optional. */
   tax_reference?: string
+  /** The agreed room rate — a stay's nightly rate, a day rest's flat charge.
+   *  null/omitted bills the room's listed price. */
+  rate?: number | null
 }
 
 /** Hours a day-rest booking occupies the room, derived from its start and end. */
@@ -996,6 +1010,9 @@ export const bnb = {
   updateClient: (key: string, data: ClientProfileEdit) =>
     api.patch<ClientProfileResult>(`/bnb/clients/${encodeURIComponent(key)}/`, data).then((r) => r.data),
   registerBooking: (data: BookingRegister) => api.post<Booking>('/bnb/bookings/', data).then((r) => r.data),
+  /** Edit a booking's own fields — the agreed `rate` rebuilds its bill. */
+  updateBooking: (id: number, data: BookingEdit) =>
+    api.patch<Booking>(`/bnb/bookings/${id}/`, data).then((r) => r.data),
   checkinBooking: (id: number) => api.post<Booking>(`/bnb/bookings/${id}/checkin/`).then((r) => r.data),
   checkoutBooking: (id: number) => api.post<Booking>(`/bnb/bookings/${id}/checkout/`).then((r) => r.data),
   cancelBooking: (id: number, data?: CancelRequest) =>
