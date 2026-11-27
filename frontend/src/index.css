@@ -118,8 +118,9 @@ input:-webkit-autofill:focus {
 
 @media print {
   /* Portrait on whatever paper is picked in the print dialog — no fixed
-     paper size, so A4, Letter, etc. all stay upright. */
-  @page { size: portrait; margin: 10mm; }
+     paper size, so A4, Letter and narrow thermal rolls all stay upright.
+     Small margins keep 58/80 mm receipts printable. */
+  @page { size: portrait; margin: 5mm; }
   body > :not(#report-print) { display: none !important; }
 
   #report-print {
@@ -192,4 +193,61 @@ input:-webkit-autofill:focus {
     border-top: 1px solid #e2e8f0;
     font-size: 8.5px; color: #94a3b8;
   }
+
+  /* ---- Guest / payment receipts (receiptDoc.ts) ----
+     A till-receipt strip: fills 58/80 mm thermal paper edge to edge, and on
+     A4/Letter prints as a centred slip. Everything is flex rows — no wide
+     tables — so every width lays out cleanly. */
+  #report-print .rc-doc {
+    width: 100%; max-width: 80mm; margin: 0 auto;
+    font-size: 10px; font-variant-numeric: tabular-nums;
+  }
+  /* Centred letterhead — logo over the company name and contacts. */
+  #report-print .rc-brand { text-align: center; }
+  #report-print .rc-logo {
+    display: inline-block; width: 44px; height: 44px; object-fit: cover;
+    border: 1px solid #e2e8f0; border-radius: 8px; background: #fff;
+    margin-bottom: 4px;
+  }
+  #report-print .rc-mono {
+    display: inline-grid; place-items: center;
+    background: #0b1020; color: #e9b964;
+    font-size: 16px; font-weight: 800; letter-spacing: 0.06em;
+  }
+  #report-print .rc-company { font-size: 15px; font-weight: 800; letter-spacing: 0.03em; text-transform: uppercase; }
+  #report-print .rc-contact { margin-top: 1px; font-size: 8px; color: #64748b; }
+  /* Dashed rules split the receipt's sections like a real till slip. */
+  #report-print .rc-dash { border-top: 1.5px dashed #94a3b8; margin: 8px 0; }
+  #report-print .rc-title {
+    text-align: center; font-size: 11px; font-weight: 800;
+    letter-spacing: 0.2em; text-transform: uppercase;
+  }
+  #report-print .rc-meta { margin-top: 1px; text-align: center; font-size: 8.5px; color: #64748b; }
+  /* Centred section captions — CHARGES, PAYMENTS RECEIVED, … */
+  #report-print .rc-sec {
+    margin: 2px 0 4px; text-align: center; font-size: 8.5px; font-weight: 800;
+    letter-spacing: 0.16em; text-transform: uppercase; color: #475569;
+  }
+  /* A room-holder's name heading their charge lines on shared bills. */
+  #report-print .rc-who { margin: 5px 0 1px; font-size: 9px; font-weight: 700; }
+  /* Label/value rows — the value wraps under itself on narrow paper. */
+  #report-print .rc-row { display: flex; justify-content: space-between; gap: 12px; padding: 1.5px 0; font-size: 9.5px; }
+  #report-print .rc-row > span { flex: none; color: #64748b; }
+  #report-print .rc-row > b { min-width: 0; text-align: right; font-weight: 600; }
+  /* Sold/paid lines — description stack left, amount right. */
+  #report-print .rc-line { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 2.5px 0; font-size: 9.5px; }
+  #report-print .rc-left { min-width: 0; }
+  #report-print .rc-what { font-weight: 600; }
+  #report-print .rc-det { margin-top: 1px; font-size: 8px; color: #64748b; }
+  #report-print .rc-amt { flex: none; font-weight: 700; }
+  #report-print .rc-total > span, #report-print .rc-total > b { font-size: 10.5px; font-weight: 800; }
+  /* The big figure on a payment receipt. */
+  #report-print .rc-amount { margin: 4px 0; text-align: center; }
+  #report-print .rc-amount > span {
+    display: block; font-size: 8px; font-weight: 700;
+    letter-spacing: 0.1em; text-transform: uppercase; color: #94a3b8;
+  }
+  #report-print .rc-amount > strong { display: block; margin-top: 2px; font-size: 20px; font-weight: 800; }
+  #report-print .rc-note { margin-top: 4px; text-align: center; font-size: 8.5px; color: #64748b; }
+  #report-print .rc-thanks { margin-top: 2px; text-align: center; font-size: 9px; font-weight: 700; }
 }

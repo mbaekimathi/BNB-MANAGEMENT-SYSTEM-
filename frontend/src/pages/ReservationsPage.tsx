@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { AlarmClock, ArrowLeft, ArrowRight, ArrowUpRight, BadgeCheck, Ban, BedDouble, Building2, CalendarCheck, CalendarClock, Check, ChevronDown, Clock, CreditCard, Gift, Hourglass, Lock, LogIn, Minus, Package, Phone, Plus, Receipt, RefreshCw, Search, Sparkles, Users, Wallet, X, type LucideIcon } from 'lucide-react'
+import { AlarmClock, ArrowLeft, ArrowRight, ArrowUpRight, BadgeCheck, Ban, BedDouble, Building2, CalendarCheck, CalendarClock, Check, Clock, CreditCard, Gift, Hourglass, Lock, LogIn, Minus, Package, Phone, Plus, Receipt, RefreshCw, Search, Sparkles, Users, Wallet, X, type LucideIcon } from 'lucide-react'
 import { useEffect, useMemo, useState, type FocusEvent, type FormEvent, type ReactNode, type TextareaHTMLAttributes } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Button, Empty, ErrorNote, Flash, Input, LinkButton, Loading, PageHeader, Panel, Pill, Select, Stat, type Tone } from '../components/hr/ui'
@@ -7,6 +7,7 @@ import { EmailInput } from '../components/hr/EmailInput'
 import { NatIdInput } from '../components/hr/NationalityInput'
 import { PhoneInput } from '../components/hr/PhoneInput'
 import { PayState } from './GuestsInHousePage'
+import { printReceipt, type ReceiptLine } from './receiptDoc'
 import { clientPath } from '../lib/roles'
 import { parseApiError, type Employee, type FieldErrors } from '../lib/api'
 import { bnb, CHECKIN_METHODS, clientKey, dayRestHours, stayLength, type Booking, type BookingStatus, type ExtraPackage, type GuestIdType, type PaymentMethod, type Room } from '../lib/bnb'
@@ -681,12 +682,10 @@ type Companion = {
   id_type: GuestIdType; id_number: string; nationality: string; notes: string
   type: string; room: string
   ownDates: boolean; start: string; days: string
-  more: boolean
 }
 const emptyCompanion = (): Companion => ({
   name: '', phone: '', email: '', id_type: 'national_id', id_number: '', nationality: 'Kenya',
   notes: '', type: '', room: '', ownDates: false, start: localDT(new Date()), days: '',
-  more: false,
 })
 
 /** One payment row's editable fields on the payment card — an untouched field
@@ -737,12 +736,55 @@ function Area({ t, label, error, ...props }: { t: WorkspaceTheme; label?: string
   )
 }
 
+/** Centred popup shell — backdrop, icon header, scrollable body and a Done
+ *  footer. Backs the room picker and the optional add-button popups. */
+function Popup({ t, onClose, icon: Icon, title, sub, children, foot }: {
+  t: WorkspaceTheme; onClose: () => void; icon: LucideIcon; title: string; sub: string
+  children: ReactNode; foot?: ReactNode
+}) {
+  return (
+    <motion.div
+      className="fixed inset-0 z-[60] grid place-items-center overflow-y-auto p-2 sm:p-4"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+    >
+      <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" />
+      <motion.div
+        role="dialog" aria-modal="true" aria-label={title}
+        initial={{ scale: 0.94, y: 12 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.96, y: 8 }}
+        transition={{ type: 'spring', stiffness: 340, damping: 30 }}
+        className={`relative my-auto flex max-h-[calc(100dvh-1rem)] w-full max-w-xl flex-col overflow-hidden shadow-2xl sm:max-h-[calc(100dvh-2rem)] ${t.radius} ${t.root}`}
+      >
+        <header className="flex items-center justify-between gap-3 border-b border-slate-900/10 px-4 py-3 sm:px-5 sm:py-4 dark:border-white/10">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className={`grid size-10 shrink-0 place-items-center ${t.radius} ${t.iconBox}`}>
+              <Icon className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <h3 className={`truncate text-base ${t.heading}`}>{title}</h3>
+              <p className={`text-xs ${t.muted}`}>{sub}</p>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className={`grid size-9 shrink-0 place-items-center ${t.radius} ${t.iconButton}`}>
+            <X className="size-4" />
+          </button>
+        </header>
+
+        <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-5 sm:py-5">{children}</div>
+
+        <footer className="flex justify-end gap-2 border-t border-slate-900/10 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5 sm:py-4 sm:pb-[max(1rem,env(safe-area-inset-bottom))] dark:border-white/10">
+          {foot}
+          <Button t={t} onClick={onClose}>Done</Button>
+        </footer>
+      </motion.div>
+    </motion.div>
+  )
+}
+
 export type RegisterMode = 'reserve' | 'stay' | 'dayrest'
 
 function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMode = 'reserve', doneLabel = 'Back to reservations', reloadBookings, tillOpen = true, tillMine = true, tillOwner }: { t: WorkspaceTheme; rooms: Room[]; bookings: Booking[]; clients: GuestRef[]; packages: ExtraPackage[]; onDone: (again?: boolean) => void; initialMode?: RegisterMode; doneLabel?: string; reloadBookings?: () => void; tillOpen?: boolean; tillMine?: boolean; tillOwner?: string | null }) {
   const [mode, setMode] = useState<RegisterMode>(initialMode)
   const [form, setForm] = useState(() => ({ ...blank, start: localDT(new Date()) }))
-  const [more, setMore] = useState(false)
   const [roomType, setRoomType] = useState('')
   // Live search inside the room picker — reset whenever the popup changes guest.
   const [roomQ, setRoomQ] = useState('')
@@ -752,9 +794,11 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
   const [saving, setSaving] = useState(false)
   // Which guest's room/dates popup is open — -1 = the main guest, n = companion n.
   const [editing, setEditing] = useState<number | null>(null)
+  // Which guest's extra-details popup is open — same -1/n convention as `editing`.
+  const [extrasFor, setExtrasFor] = useState<number | null>(null)
   // Which suggestion list is open: 'p'/'n' main guest, 'rp'/'rn' referrer, 'cp<i>'/'cn<i>' companions.
   const [suggest, setSuggest] = useState<string | null>(null)
-  // The referral panel auto-opens once the phone shows a brand-new client.
+  // The referral popup — an optional extra on card 1, opened by its add button.
   const [refOpen, setRefOpen] = useState(false)
   // The wizard's current card and the direction it's travelling for the flip.
   const [card, setCard] = useState(0)
@@ -765,18 +809,20 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
   const [depositAmt, setDepositAmt] = useState('')
   // The tax invoice / eTIMS code the bill was rung up under — optional record.
   const [taxRef, setTaxRef] = useState('')
+  // The tax-reference popup — an optional extra on card 3, opened by its chip.
   const [taxOpen, setTaxOpen] = useState(false)
   const [payEdits, setPayEdits] = useState<Partial<Record<number, PayEdit>>>({})
   // Extra packages picked per room-holder — `picked[gi]` lists catalogue ids;
-  // the same party-position key payments use (0 = main guest). `pkgOpen` holds
-  // which guest's package picker is unfolded on the bill.
+  // the same party-position key payments use (0 = main guest). `pkgFor` holds
+  // which guest's package popup is open.
   const [picked, setPicked] = useState<Record<number, number[]>>({})
-  const [pkgOpen, setPkgOpen] = useState<Record<number, boolean>>({})
+  const [pkgFor, setPkgFor] = useState<number | null>(null)
 
   useEffect(() => {
     setRoomQ('')
-    if (editing === null) return
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setEditing(null)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setEditing(null); setExtrasFor(null); setRefOpen(false); setPkgFor(null); setTaxOpen(false) }
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [editing])
@@ -822,8 +868,9 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
   // One referral per booking — offered when any member of the party is a new client.
   const partyNew = companions.some((c) => phoneComplete(c.phone) && !clients.some((x) => tail9(x.phone) === tail9(c.phone)))
   const offerRef = !known || partyNew
-  // The referral panel stays hidden — it only opens when the receptionist asks for it.
-  const showRef = refOpen || !!(form.ref_name.trim() || digits(form.ref_phone))
+  // A referrer counts as captured once either field holds something — the
+  // referral chip then reads as filled and reopens its popup for editing.
+  const hasRef = !!(form.ref_name.trim() || digits(form.ref_phone))
 
   const pickGuest = (g: GuestRef) => {
     setForm((f) => ({
@@ -998,15 +1045,10 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
   }
   const payOk = payers.every((p) => payRowOk(p.gi, dueFor(p)))
 
-  // Extra guest details stay open once anything is filled or rejected — the
-  // Kenya default alone doesn't count as filled.
+  // Extra details read as filled once anything is captured — the Kenya
+  // default alone doesn't count. `extraErrors` flags the chip instead.
   const extras = !!(form.guest_email || form.guest_id_number || form.guest_notes || (form.guest_nationality && form.guest_nationality !== 'Kenya'))
   const extraErrors = !!(errors.guest_email || errors.guest_id_number || errors.guest_nationality || errors.guest_notes)
-  const showMore = more || extras || extraErrors
-
-  // The tax panel unfolds on demand — or springs open on its own once it
-  // holds a code or carries an error, like the guest-extras section.
-  const showTax = taxOpen || !!taxRef.trim() || !!errors.tax_reference
 
   const missing = [
     !form.guest_name.trim() && 'name',
@@ -1046,7 +1088,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
     setErrors({})
     setMessage('')
     try {
-      await bnb.registerBooking({
+      const saved = await bnb.registerBooking({
         room: Number(form.room),
         guest_name: form.guest_name,
         guest_phone: form.guest_phone.trim(),
@@ -1103,20 +1145,34 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
                 .filter((p) => p.amount > 0 || p.method === 'later'),
             }),
       })
+      // Hand the client their receipt — the bill lines come from the form's own
+      // figures; receipt numbers and totals come from the saved booking.
+      try {
+        const lines: ReceiptLine[] = payers.flatMap((p) => [
+          {
+            guest: p.name,
+            label: `${p.room.name}${p.room.type_label ? ` · ${p.room.type_label}` : ''}`,
+            detail: dayRest ? spanText(p.s, p.e, p.d) : `${spanText(p.s, p.e, p.d)} @ ${formatMoney(rateFor(p.gi, p.room))}/night`,
+            amount: charge(p),
+          },
+          ...pkgPicks(p.gi).map((x) => ({ guest: p.name, label: x.name, detail: 'Extra package', amount: Number(x.amount) })),
+        ])
+        await printReceipt(saved, lines)
+      } catch { /* Printing is best-effort — the booking is already saved. */ }
       if (again) {
         // Check in + register another — wipe the wizard for the next client.
         setForm({ ...blank, start: localDT(new Date()) })
         setCompanions([])
         setPayEdits({})
         setPicked({})
-        setPkgOpen({})
+        setPkgFor(null)
         setDepositAmt('')
         setTaxRef('')
         setTaxOpen(false)
-        setMore(false)
         setRoomType('')
         setRoomQ('')
         setEditing(null)
+        setExtrasFor(null)
         setRefOpen(false)
         setSuggest(null)
         setMode(initialMode)
@@ -1168,30 +1224,29 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
     )
   }
 
-  /** The collapsed face of an optional section — a dashed 'add' tile so it reads
-   *  as a tappable row rather than static text. `amber` matches the referral
-   *  panel it opens; `open` (extras only) swaps the plus for a rotating chevron. */
-  const addTile = (label: string, hint: string, Icon: LucideIcon, onClick: () => void, opts: { open?: boolean; amber?: boolean } = {}) => {
-    const { open = false, amber = false } = opts
-    const tone = amber
-      ? 'border-amber-500/40 bg-amber-500/[0.05] hover:border-amber-500/70 hover:bg-amber-500/10 dark:border-amber-400/30 dark:bg-amber-400/[0.05] dark:hover:border-amber-400/60'
-      : `${t.chip} ${t.cardHover}`
-    const iconBox = amber ? 'bg-amber-500/15 text-amber-600 dark:bg-amber-400/15 dark:text-amber-300' : t.iconBox
-    const pill = amber ? 'bg-amber-500/15 text-amber-600 dark:bg-amber-400/15 dark:text-amber-300' : `${t.chip} ${t.muted}`
+  /** A compact '+ add' chip for an optional section — it opens a popup rather
+   *  than unfolding on the card. `summary` non-null means the section already
+   *  holds data: the chip shows it and reopens the popup for editing; `bad`
+   *  flags a field error sitting inside the popup. */
+  const addBtn = (label: string, summary: string | null, Icon: LucideIcon, onClick: () => void, opts: { amber?: boolean; bad?: boolean } = {}) => {
+    const { amber = false, bad = false } = opts
+    const filled = summary !== null
+    const tone = bad
+      ? 'border-rose-500/50 bg-rose-500/[0.06] hover:border-rose-500/80'
+      : amber
+        ? 'border-amber-500/40 bg-amber-500/[0.05] hover:border-amber-500/70 hover:bg-amber-500/10 dark:border-amber-400/30 dark:bg-amber-400/[0.05] dark:hover:border-amber-400/60'
+        : `${t.chip} ${t.cardHover}`
+    const mark = bad ? 'text-rose-500' : amber ? 'text-amber-500 dark:text-amber-300' : filled ? 'text-emerald-500' : t.muted
     return (
       <button
-        type="button" onClick={onClick} aria-expanded={open}
-        className={`flex w-full items-center gap-2.5 border border-dashed px-3 py-2.5 text-left transition ${t.radius} ${tone}`}
+        type="button" onClick={onClick}
+        className={`inline-flex max-w-full items-center gap-2 border border-dashed px-3 py-2 text-xs font-semibold transition ${t.radius} ${tone}`}
       >
-        <span className={`grid size-7 shrink-0 place-items-center rounded-md ${iconBox}`}><Icon className="size-4" /></span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-xs font-semibold">{label}</span>
-          <span className={`block text-[10px] font-medium leading-snug ${amber ? 'text-amber-600/70 dark:text-amber-300/60' : t.muted}`}>{hint}</span>
-        </span>
-        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${pill}`}>Optional</span>
-        {open
-          ? <ChevronDown className={`size-4 shrink-0 rotate-180 transition ${amber ? 'text-amber-500 dark:text-amber-300' : t.muted}`} />
-          : <Plus className={`size-4 shrink-0 ${amber ? 'text-amber-500 dark:text-amber-300' : t.muted}`} />}
+        <Icon className={`size-3.5 shrink-0 ${mark}`} />
+        <span className="truncate">{filled ? summary : label}</span>
+        {filled
+          ? <Check className="size-3.5 shrink-0 text-emerald-500" />
+          : <Plus className={`size-3.5 shrink-0 ${mark}`} />}
       </button>
     )
   }
@@ -1354,34 +1409,12 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
       !companions.some((o, x) => x !== editing && Number(o.room) === r.id)
     const title = main ? `Guest 1 · ${form.guest_name.trim() || 'main contact'}` : `Guest ${editing + 2} · ${c!.name.trim() || 'extra guest'}`
     return (
-      <motion.div
-        className="fixed inset-0 z-[60] grid place-items-center overflow-y-auto p-2 sm:p-4"
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      <Popup
+        key="stay" t={t} icon={CalendarClock} title={title}
+        sub={main ? 'Pick their room for the stay.' : 'Their room and when they stay.'}
+        onClose={() => setEditing(null)}
       >
-        <button type="button" aria-label="Close" onClick={() => setEditing(null)} className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" />
-        <motion.div
-          role="dialog" aria-modal="true" aria-label={title}
-          initial={{ scale: 0.94, y: 12 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.96, y: 8 }}
-          transition={{ type: 'spring', stiffness: 340, damping: 30 }}
-          className={`relative my-auto flex max-h-[calc(100dvh-1rem)] w-full max-w-xl flex-col overflow-hidden shadow-2xl sm:max-h-[calc(100dvh-2rem)] ${t.radius} ${t.root}`}
-        >
-          <header className="flex items-center justify-between gap-3 border-b border-slate-900/10 px-4 py-3 sm:px-5 sm:py-4 dark:border-white/10">
-            <div className="flex min-w-0 items-center gap-3">
-              <span className={`grid size-10 shrink-0 place-items-center ${t.radius} ${t.iconBox}`}>
-                <CalendarClock className="size-5" />
-              </span>
-              <div className="min-w-0">
-                <h3 className={`truncate text-base ${t.heading}`}>{title}</h3>
-                <p className={`text-xs ${t.muted}`}>{main ? 'Pick their room for the stay.' : 'Their room and when they stay.'}</p>
-              </div>
-            </div>
-            <button type="button" onClick={() => setEditing(null)} aria-label="Close" className={`grid size-9 shrink-0 place-items-center ${t.radius} ${t.iconButton}`}>
-              <X className="size-4" />
-            </button>
-          </header>
-
-          <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-5 sm:py-5">
-            {main ? (
+        {main ? (
               <section>
                 <legend className={`mb-2 text-xs font-semibold uppercase tracking-wider ${t.muted}`}>Room</legend>
                 {roomGrid(roomType, setRoomType, form.room, usableMain, (id) => { put('room', id); clearErr('room') }, blockers, (r) => {
@@ -1440,13 +1473,153 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
                 </section>
               </>
             )}
-          </div>
+      </Popup>
+    )
+  }
 
-          <footer className="flex justify-end gap-2 border-t border-slate-900/10 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5 sm:py-4 sm:pb-[max(1rem,env(safe-area-inset-bottom))] dark:border-white/10">
-            <Button t={t} onClick={() => setEditing(null)}>Done</Button>
-          </footer>
-        </motion.div>
-      </motion.div>
+  /** Referral popup — opened by the 'Add referrer' chip on card 1. */
+  const refDialog = () => {
+    if (!refOpen) return null
+    return (
+      <Popup
+        key="ref" t={t} icon={Gift} title="Who referred them?"
+        sub="Not the guest — they earn a gift voucher once this client pays."
+        onClose={() => setRefOpen(false)}
+        foot={hasRef ? (
+          <Button t={t} variant="ghost" onClick={() => { put('ref_name', ''); put('ref_phone', ''); clearErr('referrer_name'); clearErr('referrer_phone') }}>
+            <X className="size-3.5" /> Clear
+          </Button>
+        ) : undefined}
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="relative" onFocus={() => setSuggest('rp')} onBlur={blurSuggest}>
+            <PhoneInput t={t} label="Referrer's phone (optional)" value={form.ref_phone} onChange={(v) => { put('ref_phone', v); clearErr('referrer_phone') }} error={errors.referrer_phone} />
+            {suggest === 'rp' && <SuggestList t={t} items={phoneSug(form.ref_phone)} onPick={pickReferrer} />}
+          </div>
+          <div className="relative" onFocus={() => setSuggest('rn')} onBlur={blurSuggest}>
+            <Input t={t} label="Referrer's name (optional)" value={form.ref_name} onChange={setUpper('ref_name')} error={errors.referrer_name} placeholder="e.g. JANE MWANGI" autoComplete="off" />
+            {suggest === 'rn' && <SuggestList t={t} items={nameSug(form.ref_name)} onPick={pickReferrer} />}
+          </div>
+        </div>
+        {refMatch && (
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+            <BadgeCheck className="size-3.5" /> Registered client · {refMatch.name}
+          </p>
+        )}
+      </Popup>
+    )
+  }
+
+  /** Extra-details popup — ID, email, nationality and notes for whichever
+   *  guest's chip opened it (-1 = the main contact, n = companion n). */
+  const extrasDialog = () => {
+    if (extrasFor === null) return null
+    const main = extrasFor < 0
+    const c = main ? undefined : companions[extrasFor]
+    if (!main && !c) return null
+    const i = extrasFor
+    const title = main ? `Guest 1 · ${form.guest_name.trim() || 'main contact'}` : `Guest ${i + 2} · ${c!.name.trim() || 'extra guest'}`
+    return (
+      <Popup
+        key="extras" t={t} icon={BadgeCheck} title={title}
+        sub="ID, email, nationality & special requests."
+        onClose={() => setExtrasFor(null)}
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <EmailInput
+            t={t} label="Email address" value={main ? form.guest_email : c!.email}
+            onChange={(v) => main ? (put('guest_email', v), clearErr('guest_email')) : (setC(i, 'email', v), clearErr(`c${i}email`))}
+            error={main ? errors.guest_email : errors[`c${i}email`]}
+          />
+          <div className="sm:col-span-2">
+            <NatIdInput
+              t={t}
+              nationality={main ? form.guest_nationality : c!.nationality}
+              onNationality={(v) => main ? (put('guest_nationality', v), clearErr('guest_nationality')) : (setC(i, 'nationality', v), clearErr(`c${i}nationality`))}
+              idType={main ? form.guest_id_type : c!.id_type}
+              onIdType={(v) => main ? put('guest_id_type', v) : setC(i, 'id_type', v || 'national_id')}
+              idNumber={main ? form.guest_id_number : c!.id_number}
+              onIdNumber={(v) => main ? (put('guest_id_number', v), clearErr('guest_id_number')) : setC(i, 'id_number', v)}
+              error={main ? errors.guest_nationality || errors.guest_id_number : errors[`c${i}nationality`]}
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <Area
+              t={t} label="Notes & special requests" value={main ? form.guest_notes : c!.notes}
+              onChange={main ? set('guest_notes') : (e) => setC(i, 'notes', e.target.value)}
+              error={errors.guest_notes} placeholder="Allergies, late arrival, extra bed…" maxLength={500}
+            />
+          </div>
+        </div>
+      </Popup>
+    )
+  }
+
+  /** Package popup — every catalogue package for the room-holder whose chip
+   *  opened it; tapping a row toggles it on that guest's bill. */
+  const pkgDialog = () => {
+    if (pkgFor === null) return null
+    const p = payers.find((x) => x.gi === pkgFor)
+    if (!p) return null
+    const sel = picked[p.gi] ?? []
+    return (
+      <Popup
+        key="pkg" t={t} icon={Package}
+        title={`Guest ${p.gi + 1}${p.name ? ` · ${p.name}` : ''} — extra packages`}
+        sub={`Optional extras on ${p.room.name}'s bill.`}
+        onClose={() => setPkgFor(null)}
+        foot={sel.length ? (
+          <Button t={t} variant="ghost" onClick={() => setPicked((m) => ({ ...m, [p.gi]: [] }))}>
+            <X className="size-3.5" /> Clear all
+          </Button>
+        ) : undefined}
+      >
+        <div className="grid gap-2">
+          {packages.map((x) => {
+            const on = sel.includes(x.id)
+            return (
+              <button
+                key={x.id} type="button" aria-pressed={on} onClick={() => togglePkg(p.gi, x.id)}
+                className={`flex items-center gap-3 p-2.5 text-left transition ${t.radius} ${on ? t.navActive : `${t.chip} ${t.cardHover}`}`}
+              >
+                <span className={`grid size-9 shrink-0 place-items-center ${t.radius} ${on ? 'bg-white/15' : t.iconBox}`}>
+                  <Package className="size-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold">{x.name}</span>
+                  <span className={`block truncate text-[11px] ${on ? 'opacity-75' : t.muted}`}>
+                    {x.category_label} · {formatMoney(x.amount)}
+                  </span>
+                </span>
+                {on ? <Check className="size-4 shrink-0" /> : <Plus className={`size-4 shrink-0 ${t.muted}`} />}
+              </button>
+            )
+          })}
+        </div>
+      </Popup>
+    )
+  }
+
+  /** Tax-reference popup — the invoice / eTIMS code the bill was rung up under. */
+  const taxDialog = () => {
+    if (!taxOpen) return null
+    return (
+      <Popup
+        key="tax" t={t} icon={Receipt} title="Tax reference"
+        sub="Invoice / KRA eTIMS code — saved on the booking for the records."
+        onClose={() => setTaxOpen(false)}
+        foot={taxRef.trim() ? (
+          <Button t={t} variant="ghost" onClick={() => { setTaxRef(''); clearErr('tax_reference') }}>
+            <X className="size-3.5" /> Clear
+          </Button>
+        ) : undefined}
+      >
+        <Input
+          t={t} label="Tax reference" maxLength={64} autoComplete="off"
+          value={taxRef} onChange={(e) => { setTaxRef(e.target.value.toUpperCase()); clearErr('tax_reference') }}
+          error={errors.tax_reference} placeholder="Invoice / KRA eTIMS code"
+        />
+      </Popup>
     )
   }
 
@@ -1480,75 +1653,17 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
                 {known ? <><BadgeCheck className="size-3.5" /> Registered client — details auto-filled</> : <><Sparkles className="size-3.5" /> New client — first booking at this branch</>}
               </p>
             )}
-            {offerRef && (
-              <div className="sm:col-span-2">
-                {!showRef ? addTile('Add who referred them', 'They earn a gift voucher once this client pays', Gift, () => setRefOpen(true), { amber: true }) : (
-                  <div className={`relative border border-dashed border-amber-500/40 bg-amber-500/[0.05] p-3 pt-5 dark:border-amber-400/25 dark:bg-amber-400/[0.05] ${t.radius}`}>
-                    <span className="absolute -top-2.5 left-3 flex items-center gap-1 rounded-full bg-amber-500 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white shadow-sm dark:bg-amber-400 dark:text-amber-950">
-                      <Gift className="size-2.5" /> Referral
-                    </span>
-                    <p className="mb-3 flex items-center gap-2 text-xs font-semibold">
-                      <span className="grid size-7 shrink-0 place-items-center rounded-md bg-amber-500/15 text-amber-600 dark:bg-amber-400/15 dark:text-amber-300">
-                        <Gift className="size-4" />
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block">Who referred them?</span>
-                        <span className={`block text-[10px] font-medium leading-snug ${t.muted}`}>Not the guest — they earn a gift voucher once this client pays</span>
-                      </span>
-                      <button
-                        type="button" aria-label="Remove referral"
-                        onClick={() => { setRefOpen(false); put('ref_name', ''); put('ref_phone', ''); clearErr('referrer_name'); clearErr('referrer_phone') }}
-                        className={`ml-auto grid size-7 shrink-0 place-items-center self-start ${t.radius} ${t.iconButton}`}
-                      >
-                        <X className="size-3.5" />
-                      </button>
-                    </p>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div className="relative" onFocus={() => setSuggest('rp')} onBlur={blurSuggest}>
-                        <PhoneInput t={t} label="Referrer's phone" value={form.ref_phone} onChange={(v) => { put('ref_phone', v); clearErr('referrer_phone') }} error={errors.referrer_phone} />
-                        {suggest === 'rp' && <SuggestList t={t} items={phoneSug(form.ref_phone)} onPick={pickReferrer} />}
-                      </div>
-                      <div className="relative" onFocus={() => setSuggest('rn')} onBlur={blurSuggest}>
-                        <Input t={t} label="Referrer's name" value={form.ref_name} onChange={setUpper('ref_name')} error={errors.referrer_name} placeholder="e.g. JANE MWANGI" autoComplete="off" />
-                        {suggest === 'rn' && <SuggestList t={t} items={nameSug(form.ref_name)} onPick={pickReferrer} />}
-                      </div>
-                    </div>
-                    {refMatch && (
-                      <p className="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
-                        <BadgeCheck className="size-3.5" /> Registered client · {refMatch.name}
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-            <div className="sm:col-span-2">
-              {addTile(showMore ? 'Hide extra details' : 'Add more details', 'ID, email, nationality & special requests', BadgeCheck, () => setMore((m) => !m), { open: showMore })}
-              <AnimatePresence initial={false}>
-                {showMore && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }}
-                    className="overflow-hidden"
-                  >
-                    <div className={`mt-4 grid gap-4 border-t pt-4 sm:grid-cols-2 ${t.sidebarDivider}`}>
-                      <EmailInput t={t} label="Email address" value={form.guest_email} onChange={(v) => { put('guest_email', v); clearErr('guest_email') }} error={errors.guest_email} />
-                      <div className="sm:col-span-2">
-                        <NatIdInput
-                          t={t}
-                          nationality={form.guest_nationality} onNationality={(v) => { put('guest_nationality', v); clearErr('guest_nationality') }}
-                          idType={form.guest_id_type} onIdType={(v) => put('guest_id_type', v)}
-                          idNumber={form.guest_id_number} onIdNumber={(v) => { put('guest_id_number', v); clearErr('guest_id_number') }}
-                          error={errors.guest_nationality || errors.guest_id_number}
-                        />
-                      </div>
-                      <div className="sm:col-span-2">
-                        <Area t={t} label="Notes & special requests" value={form.guest_notes} onChange={set('guest_notes')} error={errors.guest_notes} placeholder="Allergies, late arrival, extra bed…" maxLength={500} />
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+            <div className="flex flex-wrap gap-2 sm:col-span-2">
+              {offerRef && addBtn(
+                'Add who referred them', hasRef ? `Referred by ${form.ref_name.trim() || form.ref_phone.trim()}` : null,
+                Gift, () => setRefOpen(true),
+                { amber: true, bad: !!(errors.referrer_name || errors.referrer_phone) },
+              )}
+              {addBtn(
+                'Add more details', extras ? 'Client details added' : null,
+                BadgeCheck, () => setExtrasFor(-1),
+                { bad: extraErrors },
+              )}
             </div>
         </div>
       </div>
@@ -1559,7 +1674,8 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
   const companionCard = (i: number): ReactNode => {
     const c = companions[i]
     if (!c) return null
-    const cMore = c.more || !!(c.email || c.id_number || c.notes || (c.nationality && c.nationality !== 'Kenya'))
+    const cExtra = !!(c.email || c.id_number || c.notes || (c.nationality && c.nationality !== 'Kenya'))
+    const cExtraErr = !!(errors[`c${i}email`] || errors[`c${i}nationality`] || errors[`c${i}id_number`])
     const cMatch = phoneComplete(c.phone) ? clients.find((x) => tail9(x.phone) === tail9(c.phone)) : undefined
     return (
       <div className={`overflow-hidden ${t.radius} ${t.chip}`}>
@@ -1578,32 +1694,11 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
             </p>
           )}
           <div className="sm:col-span-2">
-            {addTile(cMore ? 'Hide extra details' : 'Add more details', 'ID, email, nationality & special requests', BadgeCheck, () => setC(i, 'more', !cMore), { open: cMore })}
-            <AnimatePresence initial={false}>
-              {cMore && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }}
-                  className="overflow-hidden"
-                >
-                  <div className={`mt-4 grid gap-4 border-t pt-4 sm:grid-cols-2 ${t.sidebarDivider}`}>
-                    <EmailInput t={t} label="Email address" value={c.email} onChange={(v) => { setC(i, 'email', v); clearErr(`c${i}email`) }} error={errors[`c${i}email`]} />
-                    <div className="sm:col-span-2">
-                      <NatIdInput
-                        t={t}
-                        nationality={c.nationality} onNationality={(v) => { setC(i, 'nationality', v); clearErr(`c${i}nationality`) }}
-                        idType={c.id_type} onIdType={(v) => setC(i, 'id_type', v || 'national_id')}
-                        idNumber={c.id_number} onIdNumber={(v) => setC(i, 'id_number', v)}
-                        error={errors[`c${i}nationality`]}
-                      />
-                    </div>
-                    <div className="sm:col-span-2">
-                      <Area t={t} label="Notes & special requests" value={c.notes} onChange={(e) => setC(i, 'notes', e.target.value)} placeholder="Allergies, late arrival, extra bed…" maxLength={500} />
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {addBtn(
+              'Add more details', cExtra ? 'Extra details added' : null,
+              BadgeCheck, () => setExtrasFor(i),
+              { bad: cExtraErr },
+            )}
           </div>
         </div>
       </div>
@@ -1699,36 +1794,12 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
                 </button>
               </div>
             ))}
-            {packages.some((x) => !(picked[p.gi] ?? []).includes(x.id)) && (
+            {packages.length > 0 && (
               <div className={`border-t px-3 py-2.5 ${t.sidebarDivider}`}>
-                {addTile(
-                  pkgOpen[p.gi] ? 'Hide package picker' : 'Add a package',
-                  `Optional extras on Guest ${p.gi + 1}'s bill`,
-                  Package,
-                  () => setPkgOpen((m) => ({ ...m, [p.gi]: !m[p.gi] })),
-                  { open: !!pkgOpen[p.gi] },
+                {addBtn(
+                  'Add a package', pkgPicks(p.gi).length ? `${pkgPicks(p.gi).length} package${pkgPicks(p.gi).length === 1 ? '' : 's'} added` : null,
+                  Package, () => setPkgFor(p.gi),
                 )}
-                <AnimatePresence initial={false}>
-                  {pkgOpen[p.gi] && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }}
-                      className="overflow-hidden"
-                    >
-                      <div className="pt-3">
-                        <Select
-                          t={t} label={`Extra packages for Guest ${p.gi + 1}`} value=""
-                          onChange={(e) => { const id = Number(e.target.value); if (id) togglePkg(p.gi, id) }}
-                        >
-                          <option value="">Pick a package to add</option>
-                          {packages.filter((x) => !(picked[p.gi] ?? []).includes(x.id)).map((x) => (
-                            <option key={x.id} value={x.id}>{x.name} · {x.category_label} — {formatMoney(x.amount)}</option>
-                          ))}
-                        </Select>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
               </div>
             )}
           </div>
@@ -1738,30 +1809,11 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
         </p>
       </div>
       <section>
-        {addTile(
-          showTax ? 'Hide tax reference' : 'Add a tax reference',
-          'Invoice / KRA eTIMS code — saved on the booking for the records',
-          Receipt,
-          () => setTaxOpen((o) => !o),
-          { open: showTax },
+        {addBtn(
+          'Add a tax reference', taxRef.trim() ? `Ref · ${taxRef.trim()}` : null,
+          Receipt, () => setTaxOpen(true),
+          { bad: !!errors.tax_reference },
         )}
-        <AnimatePresence initial={false}>
-          {showTax && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }}
-              className="overflow-hidden"
-            >
-              <div className={`mt-3 p-3 ${t.radius} ${t.chip}`}>
-                <Input
-                  t={t} label="Tax reference" maxLength={64} autoComplete="off"
-                  value={taxRef} onChange={(e) => { setTaxRef(e.target.value.toUpperCase()); clearErr('tax_reference') }}
-                  error={errors.tax_reference} placeholder="Invoice / KRA eTIMS code"
-                />
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </section>
       {mode === 'reserve' ? (
         <section>
@@ -1929,11 +1981,10 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
         if (c.phone.trim() && !phoneComplete(c.phone)) errs[`c${j}phone`] = 'Enter a valid phone number.'
         if (!emailOk(c.email)) errs[`c${j}email`] = 'Enter a valid email address.'
       })
-      // A referral needs both halves — and the referrer can't be the guest themself.
-      if (form.ref_name.trim() || digits(form.ref_phone)) {
-        if (!form.ref_name.trim()) errs.referrer_name = "Give the referrer's name too."
-        if (!digits(form.ref_phone)) errs.referrer_phone = "Give the referrer's phone number too."
-        else if (!phoneComplete(form.ref_phone)) errs.referrer_phone = 'Enter a valid phone number.'
+      // Both referral fields are optional — the phone only needs to be valid
+      // when it's given, and the referrer can't be the guest themself.
+      if (digits(form.ref_phone)) {
+        if (!phoneComplete(form.ref_phone)) errs.referrer_phone = 'Enter a valid phone number.'
         else if (tail9(form.ref_phone) === tail9(form.guest_phone)) errs.referrer_phone = "The referrer can't be the guest themself."
       }
     } else if (i === 2) {
@@ -2032,11 +2083,11 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
       onSubmit={save}
       onKeyDown={(e) => {
         // Enter inside a text input never submits the wizard — it turns the card
-        // on earlier steps and does nothing on the last one or inside the room
-        // popup. The only way through is the last card's button.
+        // on earlier steps and does nothing on the last one or while a popup is
+        // open. The only way through is the last card's button.
         if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') {
           e.preventDefault()
-          if (cur < lastCard && editing === null) go(cur + 1)
+          if (cur < lastCard && editing === null && extrasFor === null && !refOpen && pkgFor === null && !taxOpen) go(cur + 1)
         }
       }}
       className="mx-auto w-full max-w-3xl"
@@ -2104,7 +2155,7 @@ function RegisterForm({ t, rooms, bookings, clients, packages, onDone, initialMo
       </div>
       {errors.companions && <p className="mt-2 text-[11px] text-rose-500">{errors.companions}</p>}
       <div className="mt-3"><Flash message={message} tone="red" /></div>
-      <AnimatePresence>{stayDialog()}</AnimatePresence>
+      <AnimatePresence>{stayDialog()}{refDialog()}{extrasDialog()}{pkgDialog()}{taxDialog()}</AnimatePresence>
     </form>
   )
 }

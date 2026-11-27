@@ -528,8 +528,8 @@ class Referral(models.Model):
         Booking, on_delete=models.CASCADE, related_name="referral",
         help_text="The referred client's booking.",
     )
-    referrer_name = models.CharField("who referred this client", max_length=120)
-    referrer_phone = models.CharField(max_length=20)
+    referrer_name = models.CharField("who referred this client", max_length=120, blank=True)
+    referrer_phone = models.CharField(max_length=20, blank=True)
     voucher_code = models.CharField("gift voucher code", max_length=12, unique=True, null=True, editable=False)
     redeemed_at = models.DateTimeField(null=True, blank=True)
     redeemed_by = models.ForeignKey(

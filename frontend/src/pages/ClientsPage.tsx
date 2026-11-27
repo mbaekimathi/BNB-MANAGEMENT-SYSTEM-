@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import {
   ArrowLeft, ArrowLeftRight, ArrowUpRight, Ban, Banknote, BedDouble, Building2, CalendarClock,
   CalendarMinus, CalendarPlus, Check, ChevronDown, Contact, Ellipsis, Globe, History, IdCard,
-  LogOut, Mail, MessageSquare, Minus, Moon, Package, PackagePlus, Pencil, Phone, Plus, Receipt,
+  LogOut, Mail, MessageSquare, Minus, Moon, Package, PackagePlus, Pencil, Phone, Plus, Printer, Receipt,
   RefreshCw, Search, Ticket, TrendingDown, TrendingUp, Users, Wallet, X,
   type LucideIcon,
 } from 'lucide-react'
@@ -21,6 +21,7 @@ import {
 } from '../lib/bnb'
 import { phoneComplete } from '../lib/countries'
 import { formatDate, formatMoney, thisMonth, todayISO, useApi } from '../lib/hr'
+import { depositPayment, printPaymentReceipt, receiptPayment, type ReceiptPayment } from './receiptDoc'
 import { useNow } from '../lib/time'
 import type { NavItem, WorkspaceTheme } from '../lib/workspaces'
 
@@ -43,6 +44,8 @@ interface Txn {
   ref: string
   payer: string
   amount: number
+  /** The receipt's source — a reprint renders the booking plus this transaction. */
+  src?: { b: Booking; p: ReceiptPayment }
 }
 
 /** Stay-type filters living as sidebar links under the manager's Guest
@@ -373,9 +376,10 @@ function ClientPortal({ t, c, base, charge, th, rooms, me, onChanged }: { t: Wor
     const out: Txn[] = []
     for (const b of bookings ?? []) {
       const where = `Booking #${b.id} · ${b.room_name ?? 'Room'}`
-      if (b.deposit) out.push({ id: `d${b.id}`, date: b.created_at, kind: 'Deposit', detail: where, ref: '', payer: b.guest_name, amount: Number(b.deposit) })
+      if (b.deposit) out.push({ id: `d${b.id}`, date: b.created_at, kind: 'Deposit', detail: where, ref: '', payer: b.guest_name, amount: Number(b.deposit), src: { b, p: depositPayment(b) } })
       for (const p of b.payments ?? []) {
-        out.push({ id: `p${p.id}`, date: p.paid_at ?? p.created_at, kind: p.method_label, detail: where, ref: [p.receipt_number, p.reference].filter(Boolean).join(' · '), payer: p.payer, amount: Number(p.amount) })
+        // Only real money gets a receipt — pay-later markers carry no amount.
+        out.push({ id: `p${p.id}`, date: p.paid_at ?? p.created_at, kind: p.method_label, detail: where, ref: [p.receipt_number, p.reference].filter(Boolean).join(' · '), payer: p.payer, amount: Number(p.amount), src: Number(p.amount) > 0 ? { b, p: receiptPayment(p) } : undefined })
       }
     }
     return out.sort((a, b) => b.date.localeCompare(a.date))
@@ -943,7 +947,7 @@ function TxnsBody({ t, txns, loading, th }: {
     return <Empty t={t} icon={Wallet} title="No transactions yet" text="Deposits and payments recorded on this client's bookings will appear here." />
   return (
     <div className="overflow-x-auto">
-      <table className="rtable w-full min-w-[44rem] border-collapse">
+      <table className="rtable w-full min-w-[46rem] border-collapse">
         <thead>
           <tr className={`border-b ${t.sidebarDivider}`}>
             <th className={th}>Date</th>
@@ -952,10 +956,13 @@ function TxnsBody({ t, txns, loading, th }: {
             <th className={th}>Reference</th>
             <th className={th}>Paid by</th>
             <th className={`${th} text-right`}>Amount</th>
+            <th className={`w-10 ${th}`}><span className="sr-only">Receipt</span></th>
           </tr>
         </thead>
         <tbody>
-          {txns.map((x) => (
+          {txns.map((x) => {
+            const src = x.src
+            return (
             <tr key={x.id} className={`border-b last:border-b-0 ${t.sidebarDivider}`}>
               <td className="whitespace-nowrap px-3 py-2.5 text-xs">{fmtDT(x.date)}</td>
               <td className="px-3 py-2.5 text-xs"><Pill tone={x.kind === 'Deposit' ? 'amber' : 'green'}>{x.kind}</Pill></td>
@@ -963,8 +970,20 @@ function TxnsBody({ t, txns, loading, th }: {
               <td className={`px-3 py-2.5 text-xs ${t.muted}`}>{x.ref || '—'}</td>
               <td className="px-3 py-2.5 text-xs">{x.payer}</td>
               <td className="whitespace-nowrap px-3 py-2.5 text-right text-xs font-semibold">{formatMoney(x.amount)}</td>
+              <td className="px-1 py-2 text-right">
+                {src && (
+                  <button
+                    type="button" onClick={() => void printPaymentReceipt(src.b, src.p, { reprint: true })}
+                    title="Reprint receipt" aria-label={`Reprint the receipt for ${formatMoney(x.amount)}`}
+                    className={`inline-grid size-7 place-items-center ${t.radius} ${t.iconButton}`}
+                  >
+                    <Printer className="size-3.5" />
+                  </button>
+                )}
+              </td>
             </tr>
-          ))}
+            )
+          })}
         </tbody>
       </table>
     </div>
@@ -1995,6 +2014,12 @@ function PayStay({ t, b, rooms, me, onClose, onDone }: {
         paid_at: new Date(shownPaidAt).toISOString(),
         extend_nights: extra > 0 ? extra : undefined,
       })
+      // The paid receipt prints straight away — the same copy the
+      // transactions list can reprint later.
+      try {
+        const p = (r.booking.payments ?? []).find((x) => x.receipt_number === r.applied.receipt)
+        if (p) await printPaymentReceipt(r.booking, receiptPayment(p))
+      } catch { /* Printing is best-effort — the payment is already recorded. */ }
       onDone(r.booking, r.applied)
     } catch (e) {
       setErr(parseApiError(e).message)
@@ -2159,6 +2184,11 @@ function AddPackage({ t, b, me, onClose, onDone }: {
         method: payNow ? (method as PaymentMethod) : undefined,
         reference: payNow && method !== 'cash' ? ref.trim() || undefined : undefined,
       })
+      // Money collected on the spot gets its receipt printed, like a top-up.
+      try {
+        const p = (r.booking.payments ?? []).find((x) => x.receipt_number === r.applied.receipt)
+        if (p) await printPaymentReceipt(r.booking, receiptPayment(p))
+      } catch { /* Printing is best-effort — the sale is already recorded. */ }
       onDone(r.booking, r.applied)
     } catch (e) {
       setErr(parseApiError(e).message)

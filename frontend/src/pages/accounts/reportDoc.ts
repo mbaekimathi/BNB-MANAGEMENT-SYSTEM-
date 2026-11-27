@@ -10,7 +10,7 @@ export interface ReportDocMeta {
   me?: Employee
 }
 
-const escHtml = (s: string) =>
+export const escHtml = (s: string) =>
   s.replace(/[&<>"']/g, (c) => {
     switch (c) {
       case '&': return '&amp;'
@@ -21,15 +21,15 @@ const escHtml = (s: string) =>
     }
   })
 
-const mono = (name: string) =>
+export const mono = (name: string) =>
   name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('')
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
 
-const stamp = () =>
+export const stamp = () =>
   new Date().toLocaleString([], { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 
-interface Company {
+export interface Company {
   name: string
   code: string
   contact: string
@@ -47,7 +47,7 @@ const fetchMyBranch = share(async () => {
 
 /** Company letterhead details — the branch the signed-in user works at, read
  *  live from the branch profile with the session user as fallback. */
-async function companyOf(me?: Employee): Promise<Company> {
+export async function companyOf(me?: Employee): Promise<Company> {
   const prof = await fetchMyBranch()
   const b = me?.branch_detail
   const contact = [prof?.location || b?.location, prof?.phone || b?.phone, prof?.email || b?.email].filter(Boolean).join(' · ')

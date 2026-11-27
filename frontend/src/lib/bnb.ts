@@ -383,6 +383,8 @@ export interface PayResult {
   booking: Booking
   applied: {
     amount: string
+    /** Receipt number issued to the recorded payment. */
+    receipt?: string
     extra_nights?: number
     /** The extra nights' total at the room's nightly rate. */
     cost?: string
@@ -412,6 +414,8 @@ export interface AddPackageResult {
     amount: string
     /** Present when the payment was collected on the spot. */
     paid?: string
+    /** Receipt number issued to that spot payment. */
+    receipt?: string
   }
 }
 

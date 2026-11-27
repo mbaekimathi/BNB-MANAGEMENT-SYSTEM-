@@ -5,6 +5,7 @@ import {
   Banknote,
   BarChart3,
   BedDouble,
+  Bell,
   BookOpen,
   Boxes,
   Building2,
@@ -148,6 +149,14 @@ export const PROFILE_ITEM: NavItem = {
   label: 'My profile',
   icon: UserCircle,
   description: 'Your account details, photo and sign-in preferences.',
+}
+
+/** Synthetic nav item for the notifications page reached from the header bell. */
+export const NOTIFICATIONS_ITEM: NavItem = {
+  slug: 'notifications',
+  label: 'Notifications',
+  icon: Bell,
+  description: 'Checkout reminders and front-desk alerts.',
 }
 
 export const WORKSPACES: Record<Role, Workspace> = {

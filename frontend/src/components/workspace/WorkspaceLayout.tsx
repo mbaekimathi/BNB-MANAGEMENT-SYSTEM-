@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowLeft, Calculator, ChevronDown, LayoutDashboard, Lock, LogIn, LogOut, Menu, MoreHorizontal, Plus, Timer, UserCircle, X, type LucideIcon } from 'lucide-react'
+import { ArrowLeft, Bell, Calculator, ChevronDown, LayoutDashboard, Lock, LogIn, LogOut, Menu, MoreHorizontal, Plus, Timer, UserCircle, X, type LucideIcon } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useTheme } from '../../context/ThemeContext'
@@ -7,6 +7,7 @@ import { ThemeToggle } from '../ThemeToggle'
 import { parseApiError, type Employee } from '../../lib/api'
 import { bnb } from '../../lib/bnb'
 import { hr, useApi, type ClockAction } from '../../lib/hr'
+import { useCheckoutNoticeWatcher, useDeskNotices } from '../../lib/notifications'
 import { useNow } from '../../lib/time'
 import { PROFILE_ITEM, type NavItem, type Workspace } from '../../lib/workspaces'
 import { Avatar } from './Avatar'
@@ -562,6 +563,45 @@ function AttendanceGate({ workspace, user, onLogout }: { workspace: Workspace; u
   return null
 }
 
+/** The receptionist's notification bell — runs the checkout watcher (the log
+ *  fills itself and chimes on new alerts) and carries a live unread badge that
+ *  pops each time the count changes. Opens the notifications page. */
+function NotificationBell({ workspace, basePath }: { workspace: Workspace; basePath: string }) {
+  const t = workspace.theme
+  useCheckoutNoticeWatcher()
+  const { unread } = useDeskNotices()
+  return (
+    <Link
+      to={`${basePath}/notifications`}
+      aria-label={unread ? `${unread} unread notification${unread === 1 ? '' : 's'}` : 'Notifications'}
+      title="Notifications"
+      className={`relative grid size-10 shrink-0 place-items-center rounded-xl transition ${t.iconButton}`}
+    >
+      <motion.span
+        key={unread}
+        animate={unread ? { rotate: [0, -14, 12, -8, 6, 0] } : { rotate: 0 }}
+        transition={{ duration: 0.6 }}
+        className="grid place-items-center"
+      >
+        <Bell className="size-5" />
+      </motion.span>
+      <AnimatePresence>
+        {unread > 0 && (
+          <motion.span
+            key={unread}
+            initial={{ scale: 0.4, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.4, opacity: 0 }}
+            className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white shadow"
+          >
+            {unread > 99 ? '99+' : unread}
+          </motion.span>
+        )}
+      </AnimatePresence>
+    </Link>
+  )
+}
+
 function HeaderClock({ className }: { className: string }) {
   const now = useNow()
   return (
@@ -685,6 +725,7 @@ export function WorkspaceLayout({ workspace, user, basePath, active, module, acc
               </Link>
             )}
             <HeaderClock className={t.muted} />
+            {user.role === 'branch_receptionist' && <NotificationBell workspace={workspace} basePath={basePath} />}
             <ThemeToggle className={t.iconButton} />
             <UserMenu workspace={workspace} user={user} basePath={basePath} onLogout={onLogout} />
           </div>

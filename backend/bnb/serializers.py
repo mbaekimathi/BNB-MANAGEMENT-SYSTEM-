@@ -982,19 +982,17 @@ class BookingSerializer(serializers.ModelSerializer):
                 if pkg.status != ExtraPackage.Status.ACTIVE:
                     raise serializers.ValidationError({"packages": f"{pkg.name} is suspended and can't be sold."})
 
-        # Referrals come as a pair — the referrer's name and their phone number.
+        # Referral fields are optional — the phone's shape is only checked when
+        # it's given, and the referrer can't be the guest themself.
         ref_name = (attrs.get("referrer_name") or "").strip()
         ref_phone = _normalize_phone(attrs.get("referrer_phone"))
-        if ref_name and not ref_phone:
-            raise serializers.ValidationError({"referrer_phone": "Give the referrer's phone number too."})
         if ref_phone:
-            if not ref_name:
-                raise serializers.ValidationError({"referrer_name": "Give the referrer's name too."})
             if not _valid_phone(ref_phone):
                 raise serializers.ValidationError({"referrer_phone": "Enter a valid phone number."})
             guest_phone = attrs.get("guest_phone", getattr(self.instance, "guest_phone", ""))
             if guest_phone and _phone_tail(ref_phone) == _phone_tail(guest_phone):
                 raise serializers.ValidationError({"referrer_phone": "The referrer can't be the guest themself."})
+        if ref_name or ref_phone:
             attrs["referrer_name"] = ref_name
             attrs["referrer_phone"] = ref_phone
 
@@ -1091,7 +1089,7 @@ class BookingSerializer(serializers.ModelSerializer):
                     people.append(BookingGuest.objects.create(booking=booking, **c))
             self._save_payments(booking, people, payments)
             self._save_packages(booking, people, packages)
-            if ref_phone:
+            if ref_name or ref_phone:
                 Referral.objects.create(
                     branch=booking.branch, booking=booking,
                     referrer_name=ref_name, referrer_phone=ref_phone,
@@ -1117,10 +1115,10 @@ class BookingSerializer(serializers.ModelSerializer):
             _lock_rooms(room_ids)
             _check_room_clashes(instance.room, instance.start, instance.end, comp_rows, instance)
             instance.save()
-            if ref_phone:
+            if ref_name or ref_phone:
                 Referral.objects.update_or_create(
                     booking=instance,
-                    defaults={"branch": instance.branch, "referrer_name": ref_name or "", "referrer_phone": ref_phone},
+                    defaults={"branch": instance.branch, "referrer_name": ref_name or "", "referrer_phone": ref_phone or ""},
                 )
             # When companions or payments are sent, the whole list is replaced — payment
             # guests map onto the party that results (new or existing).

@@ -1,17 +1,18 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { AlarmClock, ArrowUpRight, BadgeCheck, Ban, BedDouble, BellRing, Building2, CalendarCheck, Clock, Construction, Contact, Hash, History, Hourglass, Mail, MapPin, Minus, Phone, Ticket, TrendingDown, TrendingUp, Users, Wallet, X, type LucideIcon } from 'lucide-react'
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { AlarmClock, ArrowUpRight, BadgeCheck, Ban, BedDouble, Building2, CalendarCheck, Clock, Construction, Contact, Hash, History, Hourglass, Mail, MapPin, Minus, Phone, Ticket, TrendingDown, TrendingUp, Users, Wallet, type LucideIcon } from 'lucide-react'
+import { lazy, Suspense, useMemo } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
-import { Empty, LinkButton, Loading, Panel, Pill, type Tone } from '../components/hr/ui'
+import { Empty, LinkButton, Loading, Panel, Pill } from '../components/hr/ui'
 import { Avatar } from '../components/workspace/Avatar'
 import { WorkspaceLayout } from '../components/workspace/WorkspaceLayout'
 import { useAuth } from '../context/AuthContext'
 import type { Employee } from '../lib/api'
 import { clientPath, isBranchRole, rolePath } from '../lib/roles'
 import { greetingFor, useNow } from '../lib/time'
-import { PROFILE_ITEM, THEMES, WORKSPACES, type NavItem, type Workspace, type WorkspaceTheme } from '../lib/workspaces'
+import { NOTIFICATIONS_ITEM, PROFILE_ITEM, THEMES, WORKSPACES, type NavItem, type Workspace, type WorkspaceTheme } from '../lib/workspaces'
 import { BNB_PAGE_SLUGS, bnb, clientKey, type Booking } from '../lib/bnb'
 import { HR_PAGE_SLUGS, useApi } from '../lib/hr'
+import { departCountdown, fmtTime, sameDay } from '../lib/notifications'
 import type { RegisterMode } from './ReservationsPage'
 
 // Each workspace page is its own chunk — the first paint only downloads the
@@ -25,6 +26,7 @@ const ExtraPackagesPage = lazy(() => import('./ExtraPackagesPage'))
 const GuestsInHousePage = lazy(() => import('./GuestsInHousePage'))
 const AllTransactionsPage = lazy(() => import('./GuestsInHousePage').then((m) => ({ default: m.AllTransactionsPage })))
 const CheckOutsPage = lazy(() => import('./GuestsInHousePage').then((m) => ({ default: m.CheckOutsPage })))
+const NotificationsPage = lazy(() => import('./NotificationsPage'))
 const ReferralsPage = lazy(() => import('./ReferralsPage'))
 const ReservationsPage = lazy(() => import('./ReservationsPage'))
 const DayRestPage = lazy(() => import('./ReservationsPage').then((m) => ({ default: m.DayRestPage })))
@@ -401,53 +403,11 @@ function FrontDeskRoomStats({ t, basePath }: { t: WorkspaceTheme; basePath: stri
   )
 }
 
-/** Popup fires this long before a stay's checkout time. */
-const WARN_BEFORE_MS = 30 * 60_000
-
-const sameDay = (iso: string, now: number) => {
-  const a = new Date(iso), b = new Date(now)
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
-}
-
 const initials = (name: string) => name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase()
-
-const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-
-/** Countdown to a checkout deadline: red once it passes, amber inside the warning window. */
-function departCountdown(end: string, now: number): { text: string; tone: Tone } {
-  const ms = new Date(end).getTime() - now
-  if (ms <= 0) return { text: 'Due now', tone: 'red' }
-  const mins = Math.ceil(ms / 60_000)
-  if (mins < 60) return { text: `${mins} min left`, tone: 'amber' }
-  const h = Math.floor(mins / 60), m = mins % 60
-  return { text: m ? `${h}h ${m}m left` : `${h}h left`, tone: 'slate' }
-}
 
 /** Occupied stays ending today, soonest checkout first. */
 const departuresToday = (bookings: Booking[], now: number) =>
   bookings.filter((b) => b.status === 'occupied' && sameDay(b.end, now)).sort((a, b) => a.end.localeCompare(b.end))
-
-/** Short beep through the Web Audio API — ignored silently where autoplay is blocked. */
-function chime(times = 1) {
-  try {
-    const ctx = new AudioContext()
-    for (let i = 0; i < times; i++) {
-      const osc = ctx.createOscillator()
-      const gain = ctx.createGain()
-      osc.connect(gain)
-      gain.connect(ctx.destination)
-      const t0 = ctx.currentTime + i * 0.3
-      osc.frequency.value = 880
-      gain.gain.setValueAtTime(0.06, t0)
-      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22)
-      osc.start(t0)
-      osc.stop(t0 + 0.22)
-    }
-    window.setTimeout(() => void ctx.close(), times * 300 + 500)
-  } catch {
-    // Audio is a nicety — the visual popup still shows without it.
-  }
-}
 
 /** Receptionist landing section — every occupied stay ending today, with a live
  *  countdown and a shortcut into the guest's portal (where check-out happens).
@@ -465,7 +425,7 @@ function DeparturesToday({ t, me, basePath }: { t: WorkspaceTheme; me: Employee;
         <div>
           <h3 className={`text-base ${t.heading}`}>Checking out today</h3>
           <p className={`mt-0.5 text-xs ${t.muted}`}>
-            Guests whose stay ends today — a reminder pops up 30 minutes before and again when the time is due.
+            Guests whose stay ends today — a notification lands 30 minutes before and again when the time is due.
           </p>
         </div>
         <Link to={`${basePath}/guests-in-house/in-house`} className={`inline-flex items-center gap-1 text-xs font-semibold hover:underline ${t.accentText}`}>
@@ -543,138 +503,6 @@ function DeparturesToday({ t, me, basePath }: { t: WorkspaceTheme; me: Employee;
         )}
       </Panel>
     </section>
-  )
-}
-
-interface CheckoutAlert {
-  /** `${bookingId}|${end}|${stage}` — dedupe key in `fired`/`dismissed`, so it
-   *  can't repeat unless the stay's deadline itself moves. */
-  key: string
-  stage: 'warn' | 'due'
-  booking: Booking
-  mins: number
-}
-
-/** localStorage keys of checkout pop-ups the receptionist explicitly closed —
- *  they stay gone across reloads until that stay's deadline changes. */
-const DISMISSED_ALERTS_KEY = 'hs-checkout-alerts-dismissed'
-
-const loadDismissedAlerts = (): Set<string> => {
-  try {
-    const raw: unknown = JSON.parse(localStorage.getItem(DISMISSED_ALERTS_KEY) ?? '[]')
-    if (!Array.isArray(raw)) return new Set()
-    // Keys embed the stay's deadline — drop ones too old to ever match again.
-    const cutoff = Date.now() - 2 * DAY_MS
-    return new Set(raw.filter((k): k is string => typeof k === 'string' && new Date(k.split('|')[1]).getTime() > cutoff))
-  } catch {
-    return new Set()
-  }
-}
-
-const saveDismissedAlerts = (keys: Set<string>) => {
-  try {
-    localStorage.setItem(DISMISSED_ALERTS_KEY, JSON.stringify([...keys]))
-  } catch {
-    // Storage unavailable (private mode etc.) — the close still applies for this session.
-  }
-}
-
-/** Front-desk checkout pop-ups — mounted for the receptionist on every page of
- *  their workspace. At 30 minutes to a stay's end an amber heads-up appears
- *  (self-dismissing); when the deadline hits, a red alert stays up until the
- *  receptionist closes it. */
-function CheckoutAlerts({ t }: { t: WorkspaceTheme }) {
-  const bookings = useApi(recentBookings)
-  const now = useNow(15_000).getTime()
-  const [alerts, setAlerts] = useState<CheckoutAlert[]>([])
-  const fired = useRef(new Set<string>())
-  const [dismissed] = useState(loadDismissedAlerts)
-
-  // Keep the booking list fresh — new check-ins and check-outs land within a minute.
-  useEffect(() => {
-    const t = setInterval(bookings.reload, 60_000)
-    return () => clearInterval(t)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  useEffect(() => {
-    const live = (bookings.data ?? []).filter((b) => b.status === 'occupied')
-    const liveIds = new Set(live.map((b) => b.id))
-    const fresh: CheckoutAlert[] = []
-    for (const b of live) {
-      const ms = new Date(b.end).getTime() - now
-      const stage: CheckoutAlert['stage'] | null = ms <= 0 ? 'due' : ms <= WARN_BEFORE_MS ? 'warn' : null
-      if (!stage || (stage === 'due' && !sameDay(b.end, now))) continue
-      const key = `${b.id}|${b.end}|${stage}`
-      if (fired.current.has(key) || dismissed.has(key)) continue
-      fired.current.add(key)
-      fresh.push({ key, stage, booking: b, mins: Math.max(0, Math.ceil(ms / 60_000)) })
-    }
-    if (fresh.length) chime(fresh.some((a) => a.stage === 'due') ? 2 : 1)
-    // Drop pop-ups for stays checked out elsewhere since the last refresh.
-    setAlerts((l) => [...l.filter((a) => liveIds.has(a.booking.id)), ...fresh])
-  }, [now, bookings.data, dismissed])
-
-  const dismiss = (key: string, manual: boolean) => {
-    if (manual) {
-      dismissed.add(key)
-      saveDismissedAlerts(dismissed)
-    }
-    setAlerts((l) => l.filter((a) => a.key !== key))
-  }
-
-  return (
-    <div className="pointer-events-none fixed right-4 top-4 z-[70] flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2">
-      <AnimatePresence initial={false}>
-        {alerts.map((a) => (
-          <CheckoutToast key={a.key} t={t} alert={a} onClose={() => dismiss(a.key, true)} onExpire={() => dismiss(a.key, false)} />
-        ))}
-      </AnimatePresence>
-    </div>
-  )
-}
-
-/** One checkout pop-up card — amber reminder before the deadline, red at/after it.
- *  `onClose` is the receptionist's explicit dismiss (persisted); `onExpire` is the
- *  reminder's self-clear timeout (not persisted — it may re-warn after a reload). */
-function CheckoutToast({ t, alert, onClose, onExpire }: { t: WorkspaceTheme; alert: CheckoutAlert; onClose: () => void; onExpire: () => void }) {
-  const due = alert.stage === 'due'
-  const expireRef = useRef(onExpire)
-  useEffect(() => {
-    expireRef.current = onExpire
-  })
-  // The reminder clears itself; the due alert stays until dismissed.
-  useEffect(() => {
-    if (due) return
-    const timer = setTimeout(() => expireRef.current(), 20_000)
-    return () => clearTimeout(timer)
-  }, [due])
-
-  return (
-    <motion.div
-      layout
-      role="alert"
-      initial={{ opacity: 0, x: 40, scale: 0.96 }}
-      animate={{ opacity: 1, x: 0, scale: 1 }}
-      exit={{ opacity: 0, x: 40, scale: 0.96 }}
-      className={`pointer-events-auto flex items-start gap-3 p-4 shadow-xl ring-1 ${t.radius} ${t.root} ${due ? 'ring-rose-500/40' : 'ring-amber-500/40'}`}
-    >
-      <span className={`grid size-10 shrink-0 place-items-center rounded-xl ${due ? 'bg-rose-500/12 text-rose-600 dark:text-rose-300' : 'bg-amber-500/12 text-amber-600 dark:text-amber-300'}`}>
-        {due ? <AlarmClock className="size-5" /> : <BellRing className="size-5" />}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className={`text-sm font-semibold ${t.heading}`}>{due ? 'Checkout time due' : 'Checkout reminder'}</p>
-        <p className={`mt-0.5 truncate text-xs font-medium`}>{alert.booking.guest_name} · {alert.booking.room_name}</p>
-        <p className={`mt-0.5 text-xs ${due ? 'text-rose-500' : 'text-amber-600 dark:text-amber-300'}`}>
-          {due
-            ? `Was due at ${fmtTime(alert.booking.end)} — please check the guest out.`
-            : `Has to check out in ${alert.mins} min — due at ${fmtTime(alert.booking.end)}.`}
-        </p>
-      </div>
-      <button type="button" onClick={onClose} aria-label="Dismiss" className={`grid size-8 shrink-0 place-items-center ${t.radius} ${t.iconButton}`}>
-        <X className="size-4" />
-      </button>
-    </motion.div>
   )
 }
 
@@ -797,7 +625,9 @@ export default function RolePage() {
   const top =
     section === PROFILE_ITEM.slug
       ? PROFILE_ITEM
-      : [...workspace.nav, ...(workspace.accountNav ?? [])].find((n) => n.slug === section) ?? workspace.nav[0]
+      : section === NOTIFICATIONS_ITEM.slug
+        ? NOTIFICATIONS_ITEM
+        : [...workspace.nav, ...(workspace.accountNav ?? [])].find((n) => n.slug === section) ?? workspace.nav[0]
   const module = top.children?.length ? top : undefined
   const active = module ? module.children!.find((c) => c.slug === subSlug) ?? module.children![0] : top
   /** A client portal (…/clients/<key>, …/guest-history/<key>) is a destination
@@ -807,8 +637,8 @@ export default function RolePage() {
     !!module &&
     (module.slug === 'clients' || module.slug === 'guest-history') &&
     /^[a-z]+:/.test(subSlug)
-  /** Account pages (profile, settings) sit outside the workspace nav — swap the sidebar links. */
-  const account = !module && (top === PROFILE_ITEM || (workspace.accountNav ?? []).includes(top))
+  /** Account pages (profile, settings, notifications) sit outside the workspace nav — swap the sidebar links. */
+  const account = !module && (top === PROFILE_ITEM || top === NOTIFICATIONS_ITEM || (workspace.accountNav ?? []).includes(top))
   /** Receptionist and manager sections are modules whose sidebar shows links unique to that page. */
   const recep = user.role === 'branch_receptionist' ? module : undefined
   const mgr = user.role === 'branch_manager' ? module : undefined
@@ -878,6 +708,7 @@ export default function RolePage() {
       )
   else if (user.role === 'admin' && module?.slug === 'branch-setup')
     content = <BranchSetupPage item={active} t={workspace.theme} me={user} />
+  else if (top === NOTIFICATIONS_ITEM) content = <NotificationsPage item={active} t={workspace.theme} me={user} />
   else if (module)
     content = active.slug
       ? <Section workspace={workspace} item={active} />
@@ -909,7 +740,6 @@ export default function RolePage() {
       <Suspense fallback={<div className="grid min-h-[40vh] place-items-center"><Loading t={workspace.theme} /></div>}>
         {content}
       </Suspense>
-      {user.role === 'branch_receptionist' && <CheckoutAlerts t={workspace.theme} />}
     </WorkspaceLayout>
   )
 }
